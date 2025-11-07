@@ -275,6 +275,162 @@ class DataFetcher:
             return info.get('averageVolume')
         return None
 
+    def get_earnings_history(self, ticker: str) -> Optional[pd.DataFrame]:
+        """
+        Get earnings history (last 4 quarters actual vs estimate).
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            DataFrame with earnings history or None if error
+        """
+        cache_key = f"{ticker}_earnings_history"
+
+        # Check cache
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=self.cache_duration)
+            if cached_data is not None:
+                return pd.DataFrame(cached_data)
+
+        try:
+            # Fetch from yfinance
+            stock = yf.Ticker(ticker)
+            earnings_hist = stock.earnings_history
+
+            if earnings_hist is None or earnings_hist.empty:
+                return None
+
+            # Cache the data (convert index to string for JSON serialization)
+            if self.use_cache:
+                df_copy = earnings_hist.copy()
+                if hasattr(df_copy.index, 'astype'):
+                    df_copy.index = df_copy.index.astype(str)
+                cache.set(cache_key, cast(Dict[str, Any], df_copy.to_dict()))
+
+            return earnings_hist
+
+        except Exception as e:
+            print(f"Error fetching earnings history for {ticker}: {e}")
+            return None
+
+    def get_quarterly_financials(self, ticker: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        """
+        Get quarterly financial statements.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Tuple of (quarterly_income, quarterly_balance, quarterly_cashflow) DataFrames
+        """
+        cache_key = f"{ticker}_quarterly_financials"
+
+        # Check cache
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=self.cache_duration)
+            if cached_data is not None:
+                income = pd.DataFrame(cached_data.get('quarterly_income'))
+                balance = pd.DataFrame(cached_data.get('quarterly_balance'))
+                cashflow = pd.DataFrame(cached_data.get('quarterly_cashflow'))
+                return income, balance, cashflow
+
+        try:
+            # Fetch from yfinance
+            stock = yf.Ticker(ticker)
+            quarterly_income = stock.quarterly_income_stmt
+            quarterly_balance = stock.quarterly_balance_sheet
+            quarterly_cashflow = stock.quarterly_cashflow
+
+            # Cache the data (convert indices/columns to string for JSON serialization)
+            if self.use_cache:
+                def safe_to_dict(df):
+                    if df.empty:
+                        return {}
+                    df_copy = df.copy()
+                    if hasattr(df_copy.index, 'astype'):
+                        df_copy.index = df_copy.index.astype(str)
+                    if hasattr(df_copy.columns, 'astype'):
+                        df_copy.columns = df_copy.columns.astype(str)
+                    return df_copy.to_dict()
+
+                cache.set(cache_key, {
+                    'quarterly_income': safe_to_dict(quarterly_income),
+                    'quarterly_balance': safe_to_dict(quarterly_balance),
+                    'quarterly_cashflow': safe_to_dict(quarterly_cashflow)
+                })
+
+            return quarterly_income, quarterly_balance, quarterly_cashflow
+
+        except Exception as e:
+            print(f"Error fetching quarterly financials for {ticker}: {e}")
+            return None, None, None
+
+    def get_analyst_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Get analyst data (recommendations, price targets, upgrades/downgrades).
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with analyst data or None if error
+        """
+        cache_key = f"{ticker}_analyst_data"
+
+        # Check cache
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=self.cache_duration)
+            if cached_data is not None:
+                return cached_data
+
+        try:
+            # Fetch from yfinance
+            stock = yf.Ticker(ticker)
+
+            analyst_data = {}
+
+            # Price targets
+            try:
+                analyst_data['price_targets'] = stock.analyst_price_targets
+            except:
+                analyst_data['price_targets'] = None
+
+            # Helper to safely convert DataFrame to dict
+            def safe_df_to_dict(df):
+                if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                    return None
+                df_copy = df.copy()
+                if hasattr(df_copy.index, 'astype'):
+                    df_copy.index = df_copy.index.astype(str)
+                if hasattr(df_copy.columns, 'astype'):
+                    df_copy.columns = df_copy.columns.astype(str)
+                return df_copy.to_dict()
+
+            # Recommendations
+            try:
+                recommendations = stock.recommendations
+                analyst_data['recommendations'] = safe_df_to_dict(recommendations)
+            except:
+                analyst_data['recommendations'] = None
+
+            # Upgrades/Downgrades
+            try:
+                upgrades = stock.upgrades_downgrades
+                analyst_data['upgrades_downgrades'] = safe_df_to_dict(upgrades)
+            except:
+                analyst_data['upgrades_downgrades'] = None
+
+            # Cache the data
+            if self.use_cache:
+                cache.set(cache_key, analyst_data)
+
+            return analyst_data
+
+        except Exception as e:
+            print(f"Error fetching analyst data for {ticker}: {e}")
+            return None
+
 
 # Global fetcher instance
 fetcher = DataFetcher()

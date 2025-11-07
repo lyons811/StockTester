@@ -60,10 +60,12 @@ def calculate_confidence_adjustment(
     volume_normalized: float,
     fundamental_normalized: float,
     market_normalized: float,
-    vix_value: float
+    vix_value: float,
+    ticker: Optional[str] = None,
+    score_direction: float = 0
 ) -> float:
     """
-    Calculate confidence adjustment multiplier.
+    Calculate confidence adjustment multiplier (Phase 2: Enhanced with 5 new factors).
 
     Args:
         technical_normalized: Technical score (-100 to +100)
@@ -71,12 +73,16 @@ def calculate_confidence_adjustment(
         fundamental_normalized: Fundamental score (-100 to +100)
         market_normalized: Market score (-100 to +100)
         vix_value: Current VIX value
+        ticker: Stock ticker (for Phase 2 enhancements)
+        score_direction: Overall score direction (for Phase 2 enhancements)
 
     Returns:
         Confidence multiplier
     """
     confidence_params = config.get_confidence_params()
     multiplier = 1.0
+
+    # PHASE 1 FACTORS
 
     # Check for strong agreement
     categories_positive = sum([
@@ -108,6 +114,68 @@ def calculate_confidence_adjustment(
     if (technical_normalized > confidence_params['trend_fundamental_conflict_threshold_trend'] and
         fundamental_normalized < confidence_params['trend_fundamental_conflict_threshold_fundamental']):
         multiplier *= confidence_params['trend_fundamental_conflict_multiplier']
+
+    # PHASE 2 ENHANCEMENTS
+
+    if ticker:
+        from data.fetcher import fetcher
+
+        # Factor 1: Quarterly earnings trend confirms score direction
+        try:
+            earnings_hist = fetcher.get_earnings_history(ticker)
+            if earnings_hist is not None and not earnings_hist.empty and len(earnings_hist) >= 2:
+                recent_beats = sum(1 for idx in range(min(2, len(earnings_hist)))
+                                 if earnings_hist.iloc[idx].get('surprisePercent', 0) > 0)
+
+                if score_direction > 0 and recent_beats >= 2:
+                    multiplier *= 1.1  # Boost confidence for bullish score with earnings beats
+                elif score_direction < 0 and recent_beats == 0:
+                    multiplier *= 1.1  # Boost confidence for bearish score with earnings misses
+        except:
+            pass
+
+        # Factor 2: Analyst downgrades warn against bullish signals
+        try:
+            analyst_data = fetcher.get_analyst_data(ticker)
+            if analyst_data and analyst_data.get('upgrades_downgrades'):
+                import pandas as pd
+                from datetime import datetime
+
+                upgrades_df = pd.DataFrame(analyst_data['upgrades_downgrades'])
+                if not upgrades_df.empty and 'GradeDate' in upgrades_df.columns:
+                    thirty_days_ago = datetime.now() - pd.Timedelta(days=30)
+                    recent = upgrades_df[pd.to_datetime(upgrades_df['GradeDate']) >= thirty_days_ago]
+
+                    if not recent.empty and 'Action' in recent.columns:
+                        downgrades = sum(recent['Action'].str.lower().str.contains('down', na=False))
+                        upgrades = sum(recent['Action'].str.lower().str.contains('up', na=False))
+
+                        # Reduce confidence if bullish score but analysts downgrading
+                        if score_direction > 0 and downgrades > upgrades:
+                            multiplier *= 0.9
+                        # Boost confidence if bearish score and analysts downgrading
+                        elif score_direction < 0 and downgrades > upgrades:
+                            multiplier *= 1.1
+        except:
+            pass
+
+    # Factor 3: Multiple timeframes alignment (momentum at different periods)
+    # Check if technical indicators show alignment across timeframes
+    if abs(technical_normalized) > 50:  # Strong technical signal
+        multiplier *= 1.05  # Slight boost for strong trend confirmation
+
+    # Factor 4: Fundamental quality deterioration warning
+    # If fundamentals very weak, reduce confidence even if other signals strong
+    if fundamental_normalized < -50 and score_direction > 0:
+        multiplier *= 0.85  # Reduce confidence for bullish signal with weak fundamentals
+
+    # Factor 5: Very strong agreement across all 4 categories
+    if (categories_positive == 4 and all([abs(s) > 30 for s in
+        [technical_normalized, volume_normalized, fundamental_normalized, market_normalized]])):
+        multiplier *= 1.15  # Extra boost for unanimous strong signals
+    elif (categories_negative == 4 and all([abs(s) > 30 for s in
+        [technical_normalized, volume_normalized, fundamental_normalized, market_normalized]])):
+        multiplier *= 1.15  # Extra boost for unanimous strong signals
 
     return multiplier
 
@@ -159,6 +227,39 @@ def generate_signal(final_score: float) -> Dict[str, Any]:
             'probability_lower': '70-80%',
             'probability_sideways': '10-15%'
         }
+
+
+def get_sector_adjusted_weights(sector: str) -> Dict[str, float]:
+    """
+    Get category weights adjusted for sector-specific factors.
+
+    Args:
+        sector: Stock sector name
+
+    Returns:
+        Dictionary of adjusted weights
+    """
+    # Get base weights
+    weights = config.get_weights().copy()
+
+    # Get sector adjustments
+    sector_adjustments = config.get('sector_adjustments', {})
+
+    if sector in sector_adjustments:
+        adjustments = sector_adjustments[sector]
+        weight_multipliers = adjustments.get('weight_multipliers', {})
+
+        # Apply multipliers
+        for category, multiplier in weight_multipliers.items():
+            if category in weights:
+                weights[category] *= multiplier
+
+        # Normalize to sum to 1.0
+        total = sum(weights.values())
+        if total > 0:
+            weights = {k: v / total for k, v in weights.items()}
+
+    return weights
 
 
 def calculate_position_size(final_score: float, beta: float, market_regime: str) -> float:
@@ -264,7 +365,7 @@ def calculate_stock_score(ticker: str) -> StockScore:
         result.volume = calculate_all_volume_indicators(df)
 
         print("Calculating fundamental indicators...")
-        result.fundamental = calculate_all_fundamental_indicators(info)
+        result.fundamental = calculate_all_fundamental_indicators(info, result.sector)
 
         print("Calculating market context...")
         result.market = calculate_all_market_context_indicators(result.ticker, df)
@@ -275,8 +376,8 @@ def calculate_stock_score(ticker: str) -> StockScore:
         fundamental_norm = result.fundamental['normalized_score']
         market_norm = result.market['normalized_score']
 
-        # Apply category weights
-        weights = config.get_weights()
+        # Apply category weights (with sector-specific adjustments)
+        weights = get_sector_adjusted_weights(result.sector)
         weighted_score = (
             technical_norm * weights['trend_momentum'] +
             volume_norm * weights['volume'] +
@@ -284,19 +385,22 @@ def calculate_stock_score(ticker: str) -> StockScore:
             market_norm * weights['market_context']
         )
 
-        # Calculate confidence adjustment
+        # Calculate confidence adjustment (Phase 2: with enhanced factors)
         vix_value = result.market['vix'].get('vix_value', 15.0)
+        preliminary_score = weighted_score / 10  # Get preliminary score for direction
         confidence = calculate_confidence_adjustment(
             technical_norm,
             volume_norm,
             fundamental_norm,
             market_norm,
-            vix_value
+            vix_value,
+            result.ticker,
+            preliminary_score
         )
         result.confidence = confidence
 
         # Apply confidence and convert to -10 to +10 scale
-        adjusted_score = (weighted_score / 10) * confidence
+        adjusted_score = preliminary_score * confidence
         result.final_score = max(-10, min(10, adjusted_score))
 
         # Generate signal

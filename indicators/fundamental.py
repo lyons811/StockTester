@@ -10,20 +10,30 @@ from typing import Dict, Any, Optional
 from utils.config import config
 
 
-def calculate_pe_score(info: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_pe_score(info: Dict[str, Any], sector: Optional[str] = None) -> Dict[str, Any]:
     """
-    Calculate P/E ratio score.
+    Calculate P/E ratio score with improved edge case handling (Phase 2).
 
     Args:
         info: Stock info dictionary from yfinance
+        sector: Stock sector for sector-specific thresholds
 
     Returns:
         Dictionary with score and details
     """
     fundamental_params = config.get_fundamental_params()
 
-    # Get P/E ratio
-    pe_ratio = info.get('trailingPE') or info.get('forwardPE')
+    # Get P/E ratio - Phase 2: Try forward P/E first if trailing is negative
+    trailing_pe = info.get('trailingPE')
+    forward_pe = info.get('forwardPE')
+
+    # Use forward P/E if trailing is negative or missing
+    if trailing_pe is None or pd.isna(trailing_pe) or trailing_pe < 0:
+        pe_ratio = forward_pe
+        pe_type = "forward"
+    else:
+        pe_ratio = trailing_pe
+        pe_type = "trailing"
 
     if pe_ratio is None or pd.isna(pe_ratio):
         return {
@@ -32,64 +42,98 @@ def calculate_pe_score(info: Dict[str, Any]) -> Dict[str, Any]:
             'signal': 'No P/E data available'
         }
 
-    # Handle negative earnings
+    # Phase 2: Handle still-negative earnings (even forward)
     if pe_ratio < 0:
         return {
             'score': -1,
             'pe_ratio': pe_ratio,
-            'signal': 'Negative earnings'
+            'signal': 'Negative earnings (both trailing and forward)'
         }
 
-    # Scoring logic from spec
+    # Phase 2: Get sector-specific thresholds if available
+    pe_thresholds = fundamental_params['pe'].copy()
+    if sector:
+        sector_adjustments = config.get('sector_adjustments', {}).get(sector, {})
+        threshold_overrides = sector_adjustments.get('threshold_overrides', {})
+        if 'pe_fair' in threshold_overrides:
+            pe_thresholds['fair'] = threshold_overrides['pe_fair']
+        if 'pe_expensive' in threshold_overrides:
+            pe_thresholds['speculative'] = threshold_overrides.get('pe_expensive', pe_thresholds['speculative'])
+
+    # Scoring logic from spec with sector-specific thresholds
     if pe_ratio > fundamental_params['pe']['speculative'] and info.get('earningsGrowth', 0) < 0:
         score = -2
-        signal = "Speculative (high P/E with declining earnings)"
-    elif pe_ratio > fundamental_params['pe']['fair']:
+        signal = f"Speculative (P/E {pe_ratio:.1f} with declining earnings)"
+    elif pe_ratio > pe_thresholds['fair']:
         score = -1
-        signal = "Expensive"
-    elif pe_ratio < fundamental_params['pe']['value']:
+        signal = f"Expensive ({pe_type} P/E {pe_ratio:.1f})"
+    elif pe_ratio < pe_thresholds['value']:
         score = 1
-        signal = "Value"
+        signal = f"Value ({pe_type} P/E {pe_ratio:.1f})"
     else:
         score = 0
-        signal = "Fair"
+        signal = f"Fair ({pe_type} P/E {pe_ratio:.1f})"
 
     return {
         'score': score,
         'pe_ratio': pe_ratio,
+        'pe_type': pe_type,
         'signal': signal
     }
 
 
-def calculate_peg_score(info: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_peg_score(info: Dict[str, Any], sector: Optional[str] = None) -> Dict[str, Any]:
     """
-    Calculate PEG ratio score.
+    Calculate PEG ratio score with improved edge case handling (Phase 2).
 
     Args:
         info: Stock info dictionary from yfinance
+        sector: Stock sector for sector-specific thresholds
 
     Returns:
         Dictionary with score and details
     """
     fundamental_params = config.get_fundamental_params()
 
-    # Get P/E and growth rate
-    pe_ratio = info.get('trailingPE') or info.get('forwardPE')
+    # Get P/E and growth rate - Phase 2: use forward P/E for growth stocks
+    trailing_pe = info.get('trailingPE')
+    forward_pe = info.get('forwardPE')
+    pe_ratio = forward_pe if forward_pe and forward_pe > 0 else trailing_pe
+
     earnings_growth = info.get('earningsGrowth')
 
-    if pe_ratio is None or earnings_growth is None or pd.isna(pe_ratio) or pd.isna(earnings_growth):
+    # Phase 2: Try to calculate our own growth estimate if missing
+    if earnings_growth is None or pd.isna(earnings_growth):
+        earnings_quarterly_growth = info.get('earningsQuarterlyGrowth')
+        if earnings_quarterly_growth and not pd.isna(earnings_quarterly_growth):
+            earnings_growth = earnings_quarterly_growth
+        else:
+            return {
+                'score': 0,
+                'peg_ratio': None,
+                'signal': 'No growth data available'
+            }
+
+    if pe_ratio is None or pd.isna(pe_ratio):
         return {
             'score': 0,
             'peg_ratio': None,
-            'signal': 'No PEG data available'
+            'signal': 'No P/E data available'
         }
 
-    # Handle edge cases
-    if pe_ratio <= 0 or earnings_growth <= 0:
+    # Handle edge cases - Phase 2: Better handling of negative growth
+    if pe_ratio <= 0:
         return {
-            'score': 0,
+            'score': -1,
             'peg_ratio': None,
-            'signal': 'Invalid PEG (negative P/E or growth)'
+            'signal': 'Negative earnings'
+        }
+
+    if earnings_growth <= 0:
+        return {
+            'score': -1,
+            'peg_ratio': None,
+            'signal': 'Negative earnings growth'
         }
 
     # Calculate PEG ratio
@@ -257,18 +301,19 @@ def calculate_cash_flow_quality_score(info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calculate_all_fundamental_indicators(info: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_all_fundamental_indicators(info: Dict[str, Any], sector: Optional[str] = None) -> Dict[str, Any]:
     """
-    Calculate all fundamental indicators.
+    Calculate all fundamental indicators (Phase 2: with sector-specific thresholds).
 
     Args:
         info: Stock info dictionary from yfinance
+        sector: Stock sector for sector-specific thresholds
 
     Returns:
         Dictionary with all fundamental scores and details
     """
-    pe_result = calculate_pe_score(info)
-    peg_result = calculate_peg_score(info)
+    pe_result = calculate_pe_score(info, sector)
+    peg_result = calculate_peg_score(info, sector)
     roe_result = calculate_roe_score(info)
     debt_result = calculate_debt_equity_score(info)
     cash_flow_result = calculate_cash_flow_quality_score(info)

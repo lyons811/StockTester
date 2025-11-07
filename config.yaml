@@ -166,3 +166,180 @@ cache:
 indices:
   sp500: ^GSPC
   vix: ^VIX
+
+# Phase 2: Sector-Specific Adjustments
+# Each sector gets custom weight multipliers and threshold overrides
+sector_adjustments:
+  Technology:
+    weight_multipliers:
+      trend_momentum: 1.2  # Tech stocks = momentum heavy
+      fundamental: 0.9     # Less emphasis on traditional valuation
+    threshold_overrides:
+      pe_fair: 35          # Higher P/E acceptable for tech
+      pe_expensive: 60
+      peg_attractive: 1.5  # Growth-adjusted valuation more important
+
+  Financials:
+    weight_multipliers:
+      fundamental: 1.3     # Fundamentals critical for banks
+      trend_momentum: 0.9  # Less momentum-driven
+    threshold_overrides:
+      roe_quality: 12.0    # Lower ROE threshold for financials
+      debt_equity_healthy: 3.0  # Banks naturally have higher leverage
+
+  Financial Services:
+    weight_multipliers:
+      fundamental: 1.3
+      trend_momentum: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+      debt_equity_healthy: 3.0
+
+  Healthcare:
+    weight_multipliers:
+      fundamental: 1.2     # Quality matters
+      market_context: 0.9  # More defensive, less market-driven
+    threshold_overrides:
+      pe_fair: 30          # Pharma can have higher P/E
+      roe_quality: 12.0    # R&D heavy companies
+
+  Health Care:
+    weight_multipliers:
+      fundamental: 1.2
+      market_context: 0.9
+    threshold_overrides:
+      pe_fair: 30
+      roe_quality: 12.0
+
+  Energy:
+    weight_multipliers:
+      market_context: 1.3  # Highly cyclical
+      volume: 1.2          # Institutional flows important
+      fundamental: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 1.5  # Capital intensive industry
+
+  Consumer Cyclical:
+    weight_multipliers:
+      market_context: 1.2  # Economic cycle sensitive
+      trend_momentum: 1.1
+    threshold_overrides:
+      pe_fair: 28
+
+  Consumer Discretionary:
+    weight_multipliers:
+      market_context: 1.2
+      trend_momentum: 1.1
+    threshold_overrides:
+      pe_fair: 28
+
+  Consumer Defensive:
+    weight_multipliers:
+      fundamental: 1.2     # Quality and stability matter
+      trend_momentum: 0.9  # Less momentum-driven
+      market_context: 0.9  # More defensive
+    threshold_overrides:
+      roe_quality: 12.0
+
+  Consumer Staples:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.9
+      market_context: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+
+  Industrials:
+    weight_multipliers:
+      volume: 1.1          # Institutional interest important
+      market_context: 1.1  # Economic cycle sensitive
+    threshold_overrides:
+      debt_equity_healthy: 1.2
+
+  Basic Materials:
+    weight_multipliers:
+      market_context: 1.3  # Highly cyclical
+      volume: 1.2
+      fundamental: 0.8     # Less emphasis on P/E (cyclical earnings)
+    threshold_overrides:
+      debt_equity_healthy: 1.3
+
+  Materials:
+    weight_multipliers:
+      market_context: 1.3
+      volume: 1.2
+      fundamental: 0.8
+    threshold_overrides:
+      debt_equity_healthy: 1.3
+
+  Real Estate:
+    weight_multipliers:
+      fundamental: 1.3     # Cash flow and debt critical
+      volume: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 2.0  # REITs have higher leverage
+      cash_flow_quality: 0.9    # Different cash flow dynamics
+
+  Utilities:
+    weight_multipliers:
+      fundamental: 1.2     # Stable cash flows matter
+      trend_momentum: 0.8  # Very low momentum
+      market_context: 0.9  # Defensive sector
+    threshold_overrides:
+      debt_equity_healthy: 2.0  # Capital intensive
+      pe_fair: 20          # Lower valuation multiples
+      roe_quality: 10.0
+
+  Utility:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.8
+      market_context: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 2.0
+      pe_fair: 20
+      roe_quality: 10.0
+
+  Communication Services:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+
+  Communication:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+
+  Telecommunication Services:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+
+# Phase 2: Optimized Weights (to be populated by weight optimizer)
+optimized_weights:
+  bull_market:
+    trend_momentum: 0.35
+    volume: 0.20
+    fundamental: 0.25
+    market_context: 0.20
+
+  bear_market:
+    trend_momentum: 0.30
+    volume: 0.20
+    fundamental: 0.30
+    market_context: 0.20
+
+# Phase 2: Backtesting Configuration
+backtesting:
+  default_tickers: [AAPL, MSFT, TSLA, NVDA, JPM, XOM, PFE, WMT]
+  lookback_years: 3
+  holding_period_days: 60  # ~2-3 months
+  rebalance_frequency_days: 30
+  start_date: "2022-01-01"
+  end_date: "2025-01-01"

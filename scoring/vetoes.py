@@ -205,13 +205,146 @@ def check_data_quality_veto(info: Dict[str, Any], df: pd.DataFrame) -> VetoResul
     return result
 
 
+def check_earnings_miss_veto(ticker: str) -> VetoResult:
+    """
+    Check for consecutive earnings misses (Phase 2).
+
+    Vetos if:
+    - 3+ consecutive earnings misses in last 4 quarters
+
+    Args:
+        ticker: Stock ticker symbol
+
+    Returns:
+        VetoResult
+    """
+    result = VetoResult()
+
+    try:
+        from data.fetcher import fetcher
+        earnings_hist = fetcher.get_earnings_history(ticker)
+
+        if earnings_hist is not None and not earnings_hist.empty:
+            # Count consecutive misses in last 4 quarters
+            if len(earnings_hist) >= 3:
+                # Check if surprise percentage is negative (miss)
+                misses = 0
+                for idx in range(min(4, len(earnings_hist))):
+                    surprise_pct = earnings_hist.iloc[idx].get('surprisePercent')
+                    if surprise_pct is not None and surprise_pct < 0:
+                        misses += 1
+                    else:
+                        break  # Stop counting if not consecutive
+
+                if misses >= 3:
+                    result.add_veto(f"Consecutive earnings misses: {misses}/4 quarters missed estimates")
+
+    except Exception:
+        pass  # Skip veto if data unavailable
+
+    return result
+
+
+def check_cash_flow_deterioration_veto(ticker: str) -> VetoResult:
+    """
+    Check for deteriorating cash flow quality (Phase 2).
+
+    Vetos if:
+    - Cash flow quality < 0.5 for 3+ consecutive quarters
+
+    Args:
+        ticker: Stock ticker symbol
+
+    Returns:
+        VetoResult
+    """
+    result = VetoResult()
+
+    try:
+        from data.fetcher import fetcher
+        q_income, _, q_cashflow = fetcher.get_quarterly_financials(ticker)
+
+        if q_income is not None and not q_income.empty and q_cashflow is not None and not q_cashflow.empty:
+            # Calculate cash flow quality for each quarter
+            poor_quarters = 0
+
+            for col in range(min(4, len(q_income.columns))):
+                try:
+                    net_income = q_income.iloc[:, col].get('Net Income')
+                    operating_cf = q_cashflow.iloc[:, col].get('Operating Cash Flow')
+
+                    if net_income and operating_cf and net_income != 0:
+                        cf_quality = operating_cf / net_income
+
+                        if cf_quality < 0.5:
+                            poor_quarters += 1
+                        else:
+                            break  # Stop counting if not consecutive
+                except:
+                    break
+
+            veto_threshold = config.get('vetoes.min_cash_flow_quality_quarters', 3)
+            if poor_quarters >= veto_threshold:
+                result.add_veto(f"Deteriorating cash flow quality: {poor_quarters} consecutive quarters < 0.5")
+
+    except Exception:
+        pass  # Skip veto if data unavailable
+
+    return result
+
+
+def check_analyst_downgrade_veto(ticker: str) -> VetoResult:
+    """
+    Check for analyst downgrade cluster (Phase 2).
+
+    Vetos if:
+    - 3+ downgrades in last 30 days with no upgrades
+
+    Args:
+        ticker: Stock ticker symbol
+
+    Returns:
+        VetoResult
+    """
+    result = VetoResult()
+
+    try:
+        from data.fetcher import fetcher
+        analyst_data = fetcher.get_analyst_data(ticker)
+
+        if analyst_data and analyst_data.get('upgrades_downgrades'):
+            upgrades_downgrades = pd.DataFrame(analyst_data['upgrades_downgrades'])
+
+            if not upgrades_downgrades.empty and 'GradeDate' in upgrades_downgrades.columns:
+                # Filter to last 30 days
+                today = datetime.now()
+                thirty_days_ago = today - pd.Timedelta(days=30)
+
+                # Convert GradeDate to datetime if needed
+                recent_changes = upgrades_downgrades[
+                    pd.to_datetime(upgrades_downgrades['GradeDate']) >= thirty_days_ago
+                ]
+
+                if not recent_changes.empty and 'Action' in recent_changes.columns:
+                    downgrades = sum(recent_changes['Action'].str.lower().str.contains('down', na=False))
+                    upgrades = sum(recent_changes['Action'].str.lower().str.contains('up', na=False))
+
+                    if downgrades >= 3 and upgrades == 0:
+                        result.add_veto(f"Analyst exodus: {downgrades} downgrades in 30 days, 0 upgrades")
+
+    except Exception:
+        pass  # Skip veto if data unavailable
+
+    return result
+
+
 def apply_all_veto_rules(
     ticker: str,
     info: Dict[str, Any],
     df: pd.DataFrame
 ) -> VetoResult:
     """
-    Apply all veto rules.
+    Apply all veto rules (Phase 1 + Phase 2 enhancements).
 
     Args:
         ticker: Stock ticker symbol
@@ -223,7 +356,7 @@ def apply_all_veto_rules(
     """
     combined_result = VetoResult()
 
-    # Run all veto checks
+    # Run all veto checks (Phase 1)
     checks = [
         check_liquidity_veto(info),
         check_event_risk_veto(info),
@@ -231,6 +364,14 @@ def apply_all_veto_rules(
         check_technical_breakdown_veto(df),
         check_data_quality_veto(info, df)
     ]
+
+    # Add Phase 2 enhanced veto checks
+    phase_2_checks = [
+        check_earnings_miss_veto(ticker),
+        check_cash_flow_deterioration_veto(ticker),
+        check_analyst_downgrade_veto(ticker)
+    ]
+    checks.extend(phase_2_checks)
 
     # Combine all veto reasons
     for check in checks:

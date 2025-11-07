@@ -1,0 +1,5 @@
+weights:
+  fundamental: 0.2
+  market_context: 0.25
+  trend_momentum: 0.4
+  volume: 0.15
