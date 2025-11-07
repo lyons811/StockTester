@@ -1,0 +1,168 @@
+# Stock Scoring System Configuration
+# Based on professional hedge fund methodologies
+
+# Category Weights (Phase 1 - without advanced features)
+weights:
+  trend_momentum: 0.35
+  volume: 0.20
+  fundamental: 0.25
+  market_context: 0.20
+
+# Technical Indicator Parameters
+technical:
+  ma:
+    short_period: 50
+    long_period: 200
+
+  momentum:
+    lookback_days: 252  # ~12 months
+    skip_recent_days: 21  # Skip most recent month
+
+  rsi:
+    period: 14
+    standard_overbought: 70
+    standard_oversold: 30
+    volatile_overbought: 80
+    volatile_oversold: 20
+    high_beta_threshold: 1.5
+
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+
+# Volume Analysis Parameters
+volume:
+  recent_period: 15  # Days for recent average
+  previous_period: 15  # Days for previous average
+  accumulation_threshold_min: 0.10  # 10% increase
+  accumulation_threshold_max: 0.20  # 20% increase
+  distribution_threshold: 0.30  # 30% increase
+  price_volume_period: 20  # Days for volume average
+
+# Fundamental Thresholds
+fundamental:
+  pe:
+    value: 15
+    fair: 25
+    speculative: 50
+
+  peg:
+    attractive: 1.0
+    fair: 2.0
+
+  roe:
+    quality_threshold: 15.0  # 15%
+
+  debt_equity:
+    healthy_threshold: 1.0
+    veto_threshold: 3.0  # Automatic veto
+
+  cash_flow_quality:
+    quality_threshold: 1.0
+    veto_threshold: 0.5  # For 3+ consecutive quarters
+
+# Market Context Parameters
+market:
+  vix:
+    extreme_fear: 30
+    moderate_fear: 20
+    normal_low: 12
+
+  sector_relative:
+    outperform_threshold: 5.0  # 5%
+    underperform_threshold: -5.0  # -5%
+    lookback_days: 60
+
+  regime:
+    ma_period: 200  # Days for S&P 500 moving average
+
+# Scoring Ranges (for normalization)
+score_ranges:
+  trend_max: 6.0
+  volume_max: 3.0
+  fundamental_max: 5.0
+  market_max: 4.0
+
+# Signal Thresholds
+signals:
+  strong_buy: 6.0
+  buy: 3.0
+  neutral_high: 3.0
+  neutral_low: -3.0
+  sell: -6.0
+
+# Position Sizing (% of portfolio)
+position_sizing:
+  score_7_plus: 5.0
+  score_5_plus: 3.0
+  score_3_plus: 1.5
+  score_below_3: 0.5
+  max_position: 5.0  # Maximum position size
+
+  # Volatility adjustments
+  high_beta_threshold: 1.5
+  high_beta_multiplier: 0.7
+  low_beta_threshold: 0.7
+  low_beta_multiplier: 1.3
+
+  # Market regime adjustments
+  bear_market_multiplier: 0.8
+  bull_market_multiplier: 1.1
+
+# Automatic Veto Rules
+vetoes:
+  min_avg_volume: 500000  # Minimum average daily volume
+  min_market_cap: 300000000  # $300 million
+  earnings_days_before: 7  # Days before earnings to avoid
+  max_decline_60d: 0.50  # 50% decline in 60 days
+  min_negative_earnings_quarters: 4  # Consecutive quarters
+  max_debt_equity: 3.0
+  min_cash_flow_quality_quarters: 3  # For veto threshold
+
+# Confidence Adjustments
+confidence:
+  strong_agreement_threshold: 3  # Categories agreeing
+  strong_agreement_multiplier: 1.3
+  major_conflict_multiplier: 0.7
+  high_vix_threshold: 40
+  high_vix_multiplier: 0.8
+  trend_fundamental_conflict_threshold_trend: 30
+  trend_fundamental_conflict_threshold_fundamental: -20
+  trend_fundamental_conflict_multiplier: 0.75
+
+# Sector to ETF Mapping
+sector_etfs:
+  Technology: XLK
+  Financials: XLF
+  Finance: XLF
+  Financial Services: XLF
+  Energy: XLE
+  Healthcare: XLV
+  Health Care: XLV
+  Industrials: XLI
+  Consumer Discretionary: XLY
+  Consumer Cyclical: XLY
+  Utilities: XLU
+  Utility: XLU
+  Materials: XLB
+  Basic Materials: XLB
+  Real Estate: XLRE
+  Communication Services: XLC
+  Communication: XLC
+  Telecommunication Services: XLC
+  Consumer Staples: XLP
+  Consumer Defensive: XLP
+  default: SPY
+
+# Data Cache Settings
+cache:
+  enabled: true
+  cache_dir: cache
+  cache_duration_hours: 24
+  price_cache_duration_hours: 1  # More frequent refresh for price data
+
+# Market Indices
+indices:
+  sp500: ^GSPC
+  vix: ^VIX

@@ -174,3 +174,7 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+# Project-specific
+# Cache directory for stock data (auto-generated, expires after 24 hours)
+cache/
