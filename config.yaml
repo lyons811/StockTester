@@ -3,10 +3,10 @@
 
 # Category Weights (Phase 1 - without advanced features)
 weights:
-  trend_momentum: 0.35
-  volume: 0.20
-  fundamental: 0.25
-  market_context: 0.20
+  trend_momentum: 0.40
+  volume: 0.15
+  fundamental: 0.20
+  market_context: 0.25
 
 # Technical Indicator Parameters
 technical:
@@ -324,10 +324,10 @@ sector_adjustments:
 # Phase 2: Optimized Weights (to be populated by weight optimizer)
 optimized_weights:
   bull_market:
-    trend_momentum: 0.35
-    volume: 0.20
-    fundamental: 0.25
-    market_context: 0.20
+    trend_momentum: 0.40
+    volume: 0.15
+    fundamental: 0.20
+    market_context: 0.25
 
   bear_market:
     trend_momentum: 0.30
