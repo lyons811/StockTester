@@ -1,5 +1,6 @@
 weights:
-  fundamental: 0.2
-  market_context: 0.25
-  trend_momentum: 0.4
-  volume: 0.15
+  advanced: 0.20408163265306123
+  fundamental: 0.22448979591836735
+  market_context: 0.21428571428571427
+  trend_momentum: 0.25510204081632654
+  volume: 0.10204081632653061

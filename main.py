@@ -1,5 +1,5 @@
 """
-Stock Scoring System - Phase 2
+Stock Scoring System - Phase 3
 CLI entry point for analyzing stocks, backtesting, and optimization.
 
 Usage:
@@ -81,7 +81,7 @@ Data Sources:
         from utils.config import config
 
         print("\n" + "=" * 70)
-        print("STOCK SCORING SYSTEM - BACKTESTING MODE (PHASE 2)")
+        print("STOCK SCORING SYSTEM - BACKTESTING MODE (PHASE 3)")
         print("=" * 70)
 
         try:
@@ -116,7 +116,7 @@ Data Sources:
         from utils.config import config
 
         print("\n" + "=" * 70)
-        print("STOCK SCORING SYSTEM - WEIGHT OPTIMIZATION MODE (PHASE 2)")
+        print("STOCK SCORING SYSTEM - WEIGHT OPTIMIZATION MODE (PHASE 3)")
         print("=" * 70)
 
         try:
@@ -158,7 +158,7 @@ Data Sources:
 
     # Display welcome message
     print("\n" + "=" * 64)
-    print("STOCK SCORING SYSTEM - PHASE 2")
+    print("STOCK SCORING SYSTEM - PHASE 3")
     print("Based on Professional Hedge Fund Methodologies")
     print("=" * 64)
     print(f"\nAnalyzing: {ticker}")

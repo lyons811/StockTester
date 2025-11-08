@@ -49,12 +49,13 @@ class WeightOptimizer:
             Tuple of (best_weights, best_score)
         """
         if weight_ranges is None:
-            # Default ranges centered around current values
+            # Default ranges centered around current values (Phase 3)
             weight_ranges = {
-                'trend_momentum': [0.30, 0.35, 0.40],
-                'volume': [0.15, 0.20, 0.25],
-                'fundamental': [0.20, 0.25, 0.30],
-                'market_context': [0.15, 0.20, 0.25]
+                'trend_momentum': [0.25, 0.30, 0.35],
+                'volume': [0.10, 0.15, 0.20],
+                'fundamental': [0.18, 0.22, 0.26],
+                'market_context': [0.15, 0.18, 0.21],
+                'advanced': [0.10, 0.15, 0.20]
             }
 
         print("\n" + "="*70)

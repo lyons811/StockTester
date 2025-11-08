@@ -74,9 +74,9 @@ def print_overall_score(score: StockScore) -> None:
     print(f"RECOMMENDED POSITION: {score.position_size_pct:.1f}% of portfolio")
     print()
     print(f"PROBABILITY ESTIMATES (1-3 month timeframe):")
-    print(f"  ↗ Higher:   {score.probability_higher}")
-    print(f"  ↘ Lower:    {score.probability_lower}")
-    print(f"  → Sideways: {score.probability_sideways}")
+    print(f"  ^ Higher:   {score.probability_higher}")
+    print(f"  v Lower:    {score.probability_lower}")
+    print(f"  - Sideways: {score.probability_sideways}")
     print()
 
 
@@ -92,7 +92,7 @@ def print_category_breakdown(score: StockScore) -> None:
     tech_pct = (tech['normalized_score'] / 100) * 100
     tech_status = format_score_bar(tech['normalized_score'], 100)
 
-    print(f"✓ TREND & MOMENTUM: {tech['raw_score']:+.1f}/6 ({tech_pct:+.0f}%) - {tech_status}")
+    print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/6 ({tech_pct:+.0f}%) - {tech_status}")
     print(f"  • MA Position:       {tech['ma_position']['score']:+2d}  ({tech['ma_position']['signal']})")
     print(f"  • 12-month Momentum: {tech['momentum']['score']:+2d}  ({format_percentage(tech['momentum']['momentum_percent'], 1)} - {tech['momentum']['signal']})")
     print(f"  • RSI (14):          {tech['rsi']['score']:+2d}  ({tech['rsi']['rsi']:.0f} - {tech['rsi']['signal']})")
@@ -104,7 +104,7 @@ def print_category_breakdown(score: StockScore) -> None:
     vol_pct = (vol['normalized_score'] / 100) * 100
     vol_status = format_score_bar(vol['normalized_score'], 100)
 
-    print(f"✓ VOLUME & INSTITUTIONS: {vol['raw_score']:+.1f}/3 ({vol_pct:+.0f}%) - {vol_status}")
+    print(f"[VOLUME & INSTITUTIONS]: {vol['raw_score']:+.1f}/3 ({vol_pct:+.0f}%) - {vol_status}")
     print(f"  • Volume Trend:      {vol['volume_trend']['score']:+2d}  ({vol['volume_trend']['signal']})")
     print(f"  • Volume-Price:      {vol['volume_price']['score']:+2d}  ({vol['volume_price']['signal']})")
     print()
@@ -114,7 +114,7 @@ def print_category_breakdown(score: StockScore) -> None:
     fund_pct = (fund['normalized_score'] / 100) * 100
     fund_status = format_score_bar(fund['normalized_score'], 100)
 
-    print(f"✓ FUNDAMENTALS: {fund['raw_score']:+.1f}/5 ({fund_pct:+.0f}%) - {fund_status}")
+    print(f"[FUNDAMENTALS]: {fund['raw_score']:+.1f}/5 ({fund_pct:+.0f}%) - {fund_status}")
 
     # P/E
     pe_val = fund['pe']['pe_ratio']
@@ -147,7 +147,7 @@ def print_category_breakdown(score: StockScore) -> None:
     mkt_pct = (mkt['normalized_score'] / 100) * 100
     mkt_status = format_score_bar(mkt['normalized_score'], 100)
 
-    print(f"✓ MARKET CONTEXT: {mkt['raw_score']:+.1f}/4 ({mkt_pct:+.0f}%) - {mkt_status}")
+    print(f"[MARKET CONTEXT]: {mkt['raw_score']:+.1f}/4 ({mkt_pct:+.0f}%) - {mkt_status}")
 
     # VIX
     vix_val = mkt['vix']['vix_value']
@@ -163,6 +163,40 @@ def print_category_breakdown(score: StockScore) -> None:
     regime = mkt['market_regime']['regime']
     print(f"  • Market Regime:     {mkt['market_regime']['score']:+2d}  ({regime} market)")
     print()
+
+    # Phase 3: Advanced indicators
+    if score.advanced:
+        adv = score.advanced
+        adv_pct = (adv['normalized_score'] / 100) * 100
+        adv_status = format_score_bar(adv['normalized_score'], 100)
+
+        print(f"[ADVANCED FEATURES - Phase 3]: {adv['raw_score']:+.1f}/10 ({adv_pct:+.0f}%) - {adv_status}")
+
+        # Earnings Quality
+        earnings = adv.get('earnings_quality', {})
+        if earnings:
+            earnings_exp = earnings.get('explanation', 'N/A')
+            print(f"  • Earnings Quality:  {earnings.get('score', 0):+2d}  ({earnings_exp})")
+
+        # Analyst Revisions
+        analyst = adv.get('analyst_revisions', {})
+        if analyst:
+            analyst_exp = analyst.get('explanation', 'N/A')
+            print(f"  • Analyst Revisions: {analyst.get('score', 0):+2d}  ({analyst_exp})")
+
+        # Short Interest
+        short = adv.get('short_interest', {})
+        if short:
+            short_exp = short.get('explanation', 'N/A')
+            print(f"  • Short Interest:    {short.get('score', 0):+2d}  ({short_exp})")
+
+        # Options Flow
+        options = adv.get('options_flow', {})
+        if options:
+            options_exp = options.get('explanation', 'N/A')
+            print(f"  • Options Flow:      {options.get('score', 0):+2d}  ({options_exp})")
+
+        print()
 
 
 def print_key_factors(score: StockScore) -> None:
@@ -213,6 +247,18 @@ def print_key_factors(score: StockScore) -> None:
     if mkt['market_regime']['score'] > 0:
         bullish_factors.append(f"+ {mkt['market_regime']['regime']} market regime")
 
+    # Phase 3: Advanced factors
+    if score.advanced:
+        adv = score.advanced
+        if adv.get('earnings_quality', {}).get('score', 0) > 0:
+            bullish_factors.append(f"+ {adv['earnings_quality']['explanation']}")
+        if adv.get('analyst_revisions', {}).get('score', 0) > 0:
+            bullish_factors.append(f"+ {adv['analyst_revisions']['explanation']}")
+        if adv.get('short_interest', {}).get('score', 0) > 0:
+            bullish_factors.append(f"+ {adv['short_interest']['explanation']}")
+        if adv.get('options_flow', {}).get('score', 0) > 0:
+            bullish_factors.append(f"+ {adv['options_flow']['explanation']}")
+
     if bullish_factors:
         for factor in bullish_factors:
             print(factor)
@@ -262,6 +308,18 @@ def print_key_factors(score: StockScore) -> None:
     # Beta risk
     if score.beta > 1.5:
         risk_factors.append(f"- High volatility: Beta {score.beta:.2f}")
+
+    # Phase 3: Advanced risk factors
+    if score.advanced:
+        adv = score.advanced
+        if adv.get('earnings_quality', {}).get('score', 0) < 0:
+            risk_factors.append(f"- {adv['earnings_quality']['explanation']}")
+        if adv.get('analyst_revisions', {}).get('score', 0) < 0:
+            risk_factors.append(f"- {adv['analyst_revisions']['explanation']}")
+        if adv.get('short_interest', {}).get('score', 0) < 0:
+            risk_factors.append(f"- {adv['short_interest']['explanation']}")
+        if adv.get('options_flow', {}).get('score', 0) < 0:
+            risk_factors.append(f"- {adv['options_flow']['explanation']}")
 
     if risk_factors:
         for factor in risk_factors:

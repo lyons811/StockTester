@@ -1,12 +1,13 @@
 # Stock Scoring System Configuration
 # Based on professional hedge fund methodologies
 
-# Category Weights (Phase 1 - without advanced features)
+# Category Weights (Phase 3 - with advanced features)
 weights:
-  trend_momentum: 0.40
-  volume: 0.15
-  fundamental: 0.20
-  market_context: 0.25
+  trend_momentum: 0.26 
+  volume: 0.10
+  fundamental: 0.22
+  market_context: 0.21
+  advanced:  0.20  # Phase 3: Earnings, analyst, short interest, options
 
 # Technical Indicator Parameters
 technical:
@@ -83,6 +84,7 @@ score_ranges:
   volume_max: 3.0
   fundamental_max: 5.0
   market_max: 4.0
+  advanced_max: 10.0  # Phase 3: Max raw score from advanced indicators
 
 # Signal Thresholds
 signals:
@@ -166,6 +168,38 @@ cache:
 indices:
   sp500: ^GSPC
   vix: ^VIX
+
+# Phase 3: Advanced Features Configuration
+advanced_features:
+  # Earnings Quality Analysis
+  earnings_quality:
+    consecutive_beat_threshold: 3  # Quarters with earnings beats
+    consecutive_miss_threshold: 3  # Quarters with earnings misses
+    strong_yoy_growth_threshold: 15.0  # 15% YoY growth = bonus
+    weak_yoy_growth_threshold: -10.0  # Negative growth = penalty
+
+  # Analyst Revisions
+  analyst_revisions:
+    lookback_days: 30  # Track upgrades/downgrades in last 30 days
+    significant_upgrade_threshold: 3  # Net upgrades for max score
+    significant_downgrade_threshold: 3  # Net downgrades for min score
+
+  # Short Interest Analysis
+  short_interest:
+    enabled: true
+    high_threshold: 20.0  # 20%+ short float = squeeze potential
+    moderate_threshold: 10.0  # 10-20% = moderate
+    low_threshold: 2.0  # <2% = very low interest
+    days_to_cover_high: 5.0  # 5+ days = potential squeeze
+
+  # Options Flow Analysis
+  options_flow:
+    enabled: true
+    unusual_volume_multiplier: 2.0  # Volume > 2x open interest
+    bullish_pc_ratio_threshold: 0.7  # P/C < 0.7 = bullish
+    bearish_pc_ratio_threshold: 1.3  # P/C > 1.3 = bearish
+    neutral_pc_min: 1.0  # Neutral range
+    neutral_pc_max: 1.3
 
 # Phase 2: Sector-Specific Adjustments
 # Each sector gets custom weight multipliers and threshold overrides

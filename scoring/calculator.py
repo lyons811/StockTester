@@ -13,6 +13,7 @@ from indicators.technical import calculate_all_technical_indicators
 from indicators.volume import calculate_all_volume_indicators
 from indicators.fundamental import calculate_all_fundamental_indicators
 from indicators.market_context import calculate_all_market_context_indicators
+from indicators.advanced import calculate_all_advanced_indicators
 from scoring.vetoes import apply_all_veto_rules
 
 
@@ -29,6 +30,7 @@ class StockScore:
         self.volume: Dict[str, Any] = {}
         self.fundamental: Dict[str, Any] = {}
         self.market: Dict[str, Any] = {}
+        self.advanced: Dict[str, Any] = {}  # Phase 3
 
         # Scores
         self.raw_score: float = 0.0
@@ -62,10 +64,11 @@ def calculate_confidence_adjustment(
     market_normalized: float,
     vix_value: float,
     ticker: Optional[str] = None,
-    score_direction: float = 0
+    score_direction: float = 0,
+    advanced_normalized: float = 0
 ) -> float:
     """
-    Calculate confidence adjustment multiplier (Phase 2: Enhanced with 5 new factors).
+    Calculate confidence adjustment multiplier (Phase 3: Enhanced with advanced indicators).
 
     Args:
         technical_normalized: Technical score (-100 to +100)
@@ -75,6 +78,7 @@ def calculate_confidence_adjustment(
         vix_value: Current VIX value
         ticker: Stock ticker (for Phase 2 enhancements)
         score_direction: Overall score direction (for Phase 2 enhancements)
+        advanced_normalized: Advanced indicators score (-100 to +100, Phase 3)
 
     Returns:
         Confidence multiplier
@@ -176,6 +180,23 @@ def calculate_confidence_adjustment(
     elif (categories_negative == 4 and all([abs(s) > 30 for s in
         [technical_normalized, volume_normalized, fundamental_normalized, market_normalized]])):
         multiplier *= 1.15  # Extra boost for unanimous strong signals
+
+    # PHASE 3 FACTORS
+
+    # Factor 6: Advanced indicators confirmation
+    # Strong agreement between advanced indicators and overall score direction
+    if abs(advanced_normalized) > 30:  # Strong advanced signal
+        if (advanced_normalized > 0 and score_direction > 0) or \
+           (advanced_normalized < 0 and score_direction < 0):
+            multiplier *= 1.10  # Boost for advanced confirmation
+        elif (advanced_normalized > 0 and score_direction < 0) or \
+             (advanced_normalized < 0 and score_direction > 0):
+            multiplier *= 0.90  # Reduce for advanced contradiction
+
+    # Factor 7: Very strong advanced signal (all 4 indicators aligned)
+    # This indicates unanimous agreement on earnings, analyst, short interest, and options
+    if abs(advanced_normalized) > 60:  # Very strong advanced signal
+        multiplier *= 1.08  # Additional boost for exceptional advanced confirmation
 
     return multiplier
 
@@ -370,11 +391,16 @@ def calculate_stock_score(ticker: str) -> StockScore:
         print("Calculating market context...")
         result.market = calculate_all_market_context_indicators(result.ticker, df)
 
+        # Phase 3: Calculate advanced indicators
+        print("Calculating advanced indicators...")
+        result.advanced = calculate_all_advanced_indicators(result.ticker, config._config or {})
+
         # Get normalized scores
         technical_norm = result.technical['normalized_score']
         volume_norm = result.volume['normalized_score']
         fundamental_norm = result.fundamental['normalized_score']
         market_norm = result.market['normalized_score']
+        advanced_norm = result.advanced['normalized_score']
 
         # Apply category weights (with sector-specific adjustments)
         weights = get_sector_adjusted_weights(result.sector)
@@ -382,10 +408,11 @@ def calculate_stock_score(ticker: str) -> StockScore:
             technical_norm * weights['trend_momentum'] +
             volume_norm * weights['volume'] +
             fundamental_norm * weights['fundamental'] +
-            market_norm * weights['market_context']
+            market_norm * weights['market_context'] +
+            advanced_norm * weights.get('advanced', 0.0)  # Phase 3
         )
 
-        # Calculate confidence adjustment (Phase 2: with enhanced factors)
+        # Calculate confidence adjustment (Phase 3: with advanced indicators)
         vix_value = result.market['vix'].get('vix_value', 15.0)
         preliminary_score = weighted_score / 10  # Get preliminary score for direction
         confidence = calculate_confidence_adjustment(
@@ -395,7 +422,8 @@ def calculate_stock_score(ticker: str) -> StockScore:
             market_norm,
             vix_value,
             result.ticker,
-            preliminary_score
+            preliminary_score,
+            advanced_norm  # Phase 3
         )
         result.confidence = confidence
 

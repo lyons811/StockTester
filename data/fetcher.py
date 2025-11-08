@@ -431,6 +431,153 @@ class DataFetcher:
             print(f"Error fetching analyst data for {ticker}: {e}")
             return None
 
+    def get_short_interest(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Get short interest data for a stock.
+
+        Uses yfinance's shortPercentOfFloat field. Falls back to attempting
+        to scrape FinViz if yfinance data is unavailable.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with short interest data or None if unavailable
+        """
+        cache_key = f"{ticker}_short_interest"
+
+        # Check cache
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=self.cache_duration)
+            if cached_data is not None:
+                return cached_data
+
+        try:
+            # Fetch from yfinance
+            stock = yf.Ticker(ticker)
+            info = stock.info
+
+            short_data = {}
+
+            # Get short percent of float
+            if 'shortPercentOfFloat' in info and info['shortPercentOfFloat'] is not None:
+                # yfinance returns as decimal (0.15 = 15%)
+                short_data['short_percent_float'] = info['shortPercentOfFloat'] * 100
+            else:
+                # Try alternative field names
+                if 'sharesShort' in info and 'floatShares' in info:
+                    shares_short = info.get('sharesShort', 0)
+                    float_shares = info.get('floatShares', 1)
+                    if float_shares > 0:
+                        short_data['short_percent_float'] = (shares_short / float_shares) * 100
+
+            # Calculate days to cover if volume data available
+            if 'sharesShort' in info and 'averageVolume' in info:
+                shares_short = info.get('sharesShort', 0)
+                avg_volume = info.get('averageVolume', 1)
+                if avg_volume > 0:
+                    short_data['days_to_cover'] = shares_short / avg_volume
+
+            # If no data found, return None
+            if not short_data:
+                return None
+
+            # Cache the data
+            if self.use_cache:
+                cache.set(cache_key, short_data)
+
+            return short_data
+
+        except Exception as e:
+            print(f"Error fetching short interest for {ticker}: {e}")
+            return None
+
+    def get_options_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Get basic options data including put/call ratios and volume metrics.
+
+        Uses yfinance's options chains to calculate put/call ratios and
+        detect unusual activity.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with options metrics or None if unavailable
+        """
+        cache_key = f"{ticker}_options_data"
+
+        # Check cache
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=self.cache_duration)
+            if cached_data is not None:
+                return cached_data
+
+        try:
+            # Fetch from yfinance
+            stock = yf.Ticker(ticker)
+
+            # Get available expiration dates
+            expirations = stock.options
+
+            if not expirations or len(expirations) == 0:
+                return None
+
+            # Use the nearest expiration (first in list)
+            nearest_exp = expirations[0]
+
+            # Get option chain for nearest expiration
+            opt_chain = stock.option_chain(nearest_exp)
+
+            if opt_chain is None:
+                return None
+
+            calls = opt_chain.calls
+            puts = opt_chain.puts
+
+            if calls.empty or puts.empty:
+                return None
+
+            # Calculate put/call volume ratio
+            call_volume = calls['volume'].sum() if 'volume' in calls.columns else 0
+            put_volume = puts['volume'].sum() if 'volume' in puts.columns else 0
+
+            if call_volume == 0:
+                put_call_ratio = 2.0  # Assume high P/C if no call volume
+            else:
+                put_call_ratio = put_volume / call_volume
+
+            # Calculate put/call open interest ratio
+            call_oi = calls['openInterest'].sum() if 'openInterest' in calls.columns else 0
+            put_oi = puts['openInterest'].sum() if 'openInterest' in puts.columns else 0
+
+            # Detect unusual activity (volume > 2x open interest)
+            unusual_activity = False
+            if call_oi > 0 and call_volume > (2 * call_oi):
+                unusual_activity = True
+            if put_oi > 0 and put_volume > (2 * put_oi):
+                unusual_activity = True
+
+            options_data = {
+                'put_call_ratio': put_call_ratio,
+                'call_volume': call_volume,
+                'put_volume': put_volume,
+                'call_open_interest': call_oi,
+                'put_open_interest': put_oi,
+                'unusual_activity': unusual_activity,
+                'expiration': nearest_exp
+            }
+
+            # Cache the data
+            if self.use_cache:
+                cache.set(cache_key, options_data)
+
+            return options_data
+
+        except Exception as e:
+            print(f"Error fetching options data for {ticker}: {e}")
+            return None
+
 
 # Global fetcher instance
 fetcher = DataFetcher()

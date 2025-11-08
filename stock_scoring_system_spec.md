@@ -925,31 +925,6 @@ position_size_pct = min(position_size_pct, 5.0)
 **Estimated Complexity:** High  
 **Lines of Code:** +300-500
 
-### Phase 5: Real-Time Monitoring & Portfolio Management
-**Priority:** LOW  
-**Timeline:** 2-4 weeks
-
-**Components:**
-- Daily automated scoring for watchlist
-- Alert system for signal changes
-- Portfolio tracking and rebalancing logic
-- Risk management dashboard
-- Performance attribution analysis
-
-**Deliverables:**
-- Automated daily reports
-- Email/SMS alerts for signals
-- Portfolio tracker with P&L
-- Web dashboard (optional)
-
-**Data Sources Needed:** 
-- Real-time data feeds (may require subscription)
-- Database for storing results
-
-**Estimated Complexity:** Very High  
-**Lines of Code:** +500-1000
-
----
 
 ## OUTPUT FORMAT
 
