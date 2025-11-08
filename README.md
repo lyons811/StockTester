@@ -2,7 +2,7 @@
 
 A professional-grade stock analysis system based on hedge fund methodologies. Analyzes stocks across technical, volume, fundamental, market context, and advanced indicators to generate buy/sell/hold signals with confidence ratings and position sizing recommendations.
 
-**Status**: Phase 3 complete - Validated with 61.8% win rate and +3.77% avg return on 3 years of historical data (2022-2025)
+**Status**: Phase 4 complete ✅ - Advanced optimization & regime-based backtesting with walk-forward validation, Sharpe ratio optimization, and bull/bear market adaptation
 
 ## Features
 
@@ -27,6 +27,15 @@ A professional-grade stock analysis system based on hedge fund methodologies. An
 - **Confidence Scoring**: Multi-factor confidence adjustment system
 - **Position Sizing**: Risk-adjusted portfolio allocation recommendations
 - **Smart Caching**: 24-hour cache to respect API rate limits
+
+### Phase 4: Advanced Optimization & Validation ✨ *NEW*
+- **Sharpe Ratio Optimization**: Optimizes for risk-adjusted returns (not just win rate)
+- **Walk-Forward Validation**: Expanding window testing prevents overfitting (5-6 out-of-sample periods)
+- **Regime-Adaptive Weights**: Separate bull/bear market weight sets (200-day MA detection)
+- **Advanced Risk Metrics**: Sharpe ratio, Sortino ratio, Max Drawdown, Calmar ratio
+- **Statistical Validation**: Significance testing, bootstrap confidence intervals, Monte Carlo simulation
+- **Extended Backtesting**: 7-year validation period (2018-2025) vs 3 years in Phase 3
+- **Comprehensive Reporting**: Automated report generation with regime comparisons
 
 ## Installation
 
@@ -59,6 +68,7 @@ pip install -r requirements.txt
 - `numpy` - Numerical computing
 - `pandas-ta` - Technical analysis indicators
 - `pyyaml` - Configuration file parsing
+- `scipy` - Statistical functions (Phase 4: significance testing)
 
 ## Usage
 
@@ -82,6 +92,30 @@ python main.py --optimize-weights
 Grid search to find optimal category weights. Tests combinations and evaluates on historical data. Exports results to `optimized_weights.yaml`.
 
 **Note**: Optimization takes 10-20 minutes.
+
+### Phase 4: Walk-Forward Optimization ✨ *NEW*
+```bash
+python main.py --walk-forward
+```
+Runs walk-forward optimization with Sharpe ratio objective. Validates strategy across 5-6 expanding window periods (2018-2025) to prevent overfitting. Shows out-of-sample performance for each test period.
+
+**Note**: Takes 30-60 minutes due to multiple optimization rounds.
+
+### Phase 4: Regime-Specific Optimization ✨ *NEW*
+```bash
+python main.py --optimize-regime
+```
+Optimizes separate weight sets for bull and bear markets. Automatically classifies historical periods using S&P 500 vs 200-day MA, then finds optimal weights for each regime. Updates `config.yaml` with regime-specific weights.
+
+**Note**: Takes 20-40 minutes.
+
+### Phase 4: Complete Optimization Pipeline ✨ *NEW*
+```bash
+python run_phase4_optimization.py
+```
+Runs complete Phase 4 pipeline: walk-forward optimization, regime-specific weights, statistical validation, and comprehensive report generation. Fully automated.
+
+**Note**: Takes 30-60 minutes. Generates `phase4_validation_report.md`.
 
 ### Sample Output
 ```
@@ -119,6 +153,7 @@ CATEGORY BREAKDOWN
 ```
 StockTester/
 ├── main.py                      # CLI entry point
+├── run_phase4_optimization.py   # Phase 4: Complete optimization pipeline (automated)
 ├── config.yaml                  # Configuration (weights, thresholds, sector adjustments)
 ├── requirements.txt             # Python dependencies
 ├── README.md                    # This file
@@ -142,16 +177,20 @@ StockTester/
 │   ├── calculator.py           # Main scoring algorithm (Phase 2: sector adjustments)
 │   └── vetoes.py               # Automatic veto rules (Phase 2: 3 new rules)
 │
-├── backtesting/                 # Phase 2: Historical validation
+├── backtesting/                 # Phase 2-4: Historical validation & optimization
 │   ├── __init__.py
 │   ├── engine.py               # Walk-forward backtesting engine
-│   ├── metrics.py              # Performance metrics calculator
-│   └── optimizer.py            # Grid search weight optimizer
+│   ├── metrics.py              # Performance metrics (Phase 4: +Sharpe, Sortino, Max DD, Calmar)
+│   ├── optimizer.py            # Grid search optimizer (Phase 4: +Sharpe objective, regime optimization)
+│   ├── walk_forward.py         # Phase 4: Walk-forward optimizer with expanding windows
+│   └── report_generator.py     # Phase 4: Comprehensive validation report generator
 │
 ├── utils/                       # Utilities
 │   ├── __init__.py
 │   ├── config.py               # Configuration loader
-│   └── formatter.py            # Console output formatting
+│   ├── formatter.py            # Console output formatting
+│   ├── statistics.py           # Phase 4: Statistical validation (t-tests, bootstrap, Monte Carlo)
+│   └── regime_classifier.py    # Phase 4: Bull/bear market regime detection
 │
 └── cache/                       # Cache directory (auto-created)
     ├── AAPL_price_4y.json
@@ -179,6 +218,29 @@ weights:
 ```
 
 *Note: Weights optimized via 5-category grid search on 3 years of historical data*
+
+### Regime-Specific Weights (Phase 4) ✨ *NEW*
+```yaml
+optimized_weights:
+  bull_market:    # Used when S&P 500 > 200-day MA
+    trend_momentum: 0.30  # Will be optimized
+    volume: 0.10
+    fundamental: 0.20
+    market_context: 0.20
+    advanced: 0.20
+
+  bear_market:    # Used when S&P 500 < 200-day MA
+    trend_momentum: 0.25  # Will be optimized
+    volume: 0.15
+    fundamental: 0.25
+    market_context: 0.20
+    advanced: 0.15
+
+backtesting:
+  use_regime_weights: false  # Enable after running regime optimization
+```
+
+*Note: Regime weights optimized separately for bull/bear markets. Enable with `use_regime_weights: true` after running `python main.py --optimize-regime`*
 
 ### Sector-Specific Adjustments (Phase 2)
 ```yaml
@@ -292,6 +354,86 @@ See `stock_scoring_system_spec.md` for detailed methodology.
 
 Run `python main.py --backtest` to see full performance breakdown by score range, signal type, and ticker.
 
+---
+
+### Phase 4: Advanced Optimization Framework ✨ *NEW*
+
+**Implementation Status**: ✅ Complete and Ready to Run
+
+Phase 4 extends validation to **7 years (2018-2025)** with advanced optimization and statistical rigor:
+
+**Key Improvements Over Phase 3:**
+
+| Feature | Phase 3 | Phase 4 |
+|---------|---------|---------|
+| **Validation Period** | 3 years (2022-2025) | 7 years (2018-2025) |
+| **Optimization Objective** | Win Rate | Sharpe Ratio (risk-adjusted) |
+| **Validation Method** | Single period | Walk-forward (5-6 periods) |
+| **Market Adaptation** | Static weights | Regime-specific weights |
+| **Risk Metrics** | Basic (win rate, returns) | Advanced (Sharpe, Sortino, Max DD, Calmar) |
+| **Statistical Tests** | None | Significance tests, confidence intervals |
+
+**Phase 4 Framework Includes:**
+
+1. **Walk-Forward Optimization**
+   - Expanding window validation (train 2018-2019 → test 2020, train 2018-2020 → test 2021, etc.)
+   - 5-6 out-of-sample test periods
+   - Prevents overfitting through strict train/test separation
+   - Aggregated metrics across all test periods
+
+2. **Sharpe Ratio Optimization**
+   - Optimizes for risk-adjusted returns (return per unit of risk)
+   - Professional standard for portfolio management
+   - Accounts for volatility, not just raw returns
+
+3. **Regime-Specific Weights**
+   - Bull market weights (S&P 500 > 200-day MA)
+   - Bear market weights (S&P 500 < 200-day MA)
+   - Automatic regime detection and weight switching
+   - Adapts strategy to changing market conditions
+
+4. **Advanced Risk Metrics**
+   - **Sharpe Ratio**: Risk-adjusted returns
+   - **Sortino Ratio**: Downside deviation only
+   - **Maximum Drawdown**: Worst peak-to-trough decline
+   - **Calmar Ratio**: Return / max drawdown
+   - **Annualized Returns & Volatility**
+
+5. **Statistical Validation**
+   - Win rate significance testing (binomial test)
+   - Mean return significance (t-test)
+   - Bootstrap confidence intervals (95%)
+   - Monte Carlo simulation (1000+ iterations)
+   - Phase 3 vs Phase 4 comparison tests
+
+**How to Run Phase 4:**
+
+```bash
+# Complete automated pipeline (recommended)
+python run_phase4_optimization.py
+
+# Or individual components
+python main.py --walk-forward       # Walk-forward optimization
+python main.py --optimize-regime    # Regime-specific weights
+```
+
+**Expected Outcomes:**
+- Sharpe Ratio: 0.5-1.5+ (target: > 1.0 for good risk-adjusted performance)
+- Out-of-sample win rate: 60-65%+
+- Statistical significance: p < 0.05 (better than random)
+- Regime-adaptive performance: Improved stability across market cycles
+
+**Deliverables:**
+- `config.yaml` updated with optimized bull/bear market weights
+- `phase4_validation_report.md` - Comprehensive analysis with:
+  - Walk-forward period-by-period results
+  - Regime comparison (bull vs bear performance)
+  - Statistical significance tests
+  - Phase 3 vs Phase 4 comparison
+- Console output with real-time progress and results
+
+**Note**: First run takes 30-60 minutes. Results are cached for analysis.
+
 ## Data Sources
 
 - **Yahoo Finance** (yfinance): Stock prices, fundamentals, earnings, analyst data, short interest, options chains
@@ -320,8 +462,10 @@ Run `python main.py --backtest` to see full performance breakdown by score range
 
 - **Timeframe**: Optimized for 1-3 month predictions
 - **Execution**: 5-10 seconds per stock (first run), <1 second (cached)
-- **Backtest**: 5-10 minutes, Weight optimization: 15-30 minutes (243 combinations)
-- **Complexity**: ~1,700 lines of code (Phase 3 complete)
+- **Backtest**: 5-10 minutes
+- **Weight Optimization**: 15-30 minutes (243 combinations)
+- **Phase 4 Walk-Forward**: 30-60 minutes (5-6 optimization rounds)
+- **Complexity**: ~3,300 lines of code (Phase 4 complete)
 
 ## Methodology
 
@@ -335,10 +479,22 @@ This tool is for educational and informational purposes only. Not financial advi
 
 ---
 
-**Built with Python, yfinance, and quantitative methodologies**
+**Built with Python, yfinance, scipy, and quantitative methodologies**
 
-**Current Status**: Phase 3 complete ✅
+**Current Status**: Phase 4 complete ✅
+
+**Phase 3 Foundation:**
 - 5-category scoring system with advanced features
 - 61.8% win rate, +3.77% avg return (validated on 2022-2025 data)
 - BUY signals: 70.3% win rate, +6.95% avg return
 - Optimized weights via 243-combination grid search
+
+**Phase 4 Enhancements:**
+- Walk-forward optimization with Sharpe ratio objective
+- 7-year validation period (2018-2025) with 5-6 out-of-sample test periods
+- Regime-specific weights for bull/bear market adaptation
+- Advanced risk metrics (Sharpe, Sortino, Max Drawdown, Calmar)
+- Statistical validation (significance tests, confidence intervals, Monte Carlo)
+- Comprehensive reporting and automated pipeline
+
+**Ready to Run**: `python run_phase4_optimization.py`

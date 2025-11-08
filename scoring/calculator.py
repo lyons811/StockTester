@@ -252,7 +252,12 @@ def generate_signal(final_score: float) -> Dict[str, Any]:
 
 def get_sector_adjusted_weights(sector: str) -> Dict[str, float]:
     """
-    Get category weights adjusted for sector-specific factors.
+    Get category weights adjusted for regime and sector-specific factors (Phase 4).
+
+    Phase 4 Enhancement:
+    - First checks if regime-adaptive weights are enabled
+    - Loads bull_market or bear_market weights based on current S&P 500 regime
+    - Then applies sector-specific multipliers on top of regime weights
 
     Args:
         sector: Stock sector name
@@ -260,10 +265,38 @@ def get_sector_adjusted_weights(sector: str) -> Dict[str, float]:
     Returns:
         Dictionary of adjusted weights
     """
-    # Get base weights
-    weights = config.get_weights().copy()
+    # Phase 4: Check for regime-adaptive weights
+    use_regime_weights = config.get('backtesting', {}).get('use_regime_weights', False)
 
-    # Get sector adjustments
+    if use_regime_weights:
+        # Detect current market regime
+        from utils.regime_classifier import get_current_regime
+
+        try:
+            current_regime = get_current_regime()
+            print(f"[Phase 4] Current market regime: {current_regime}")
+
+            # Load regime-specific weights from config
+            regime_weights = config.get('optimized_weights', {})
+
+            if current_regime == 'Bull' and 'bull_market' in regime_weights:
+                weights = regime_weights['bull_market'].copy()
+                print(f"[Phase 4] Using bull market weights")
+            elif current_regime == 'Bear' and 'bear_market' in regime_weights:
+                weights = regime_weights['bear_market'].copy()
+                print(f"[Phase 4] Using bear market weights")
+            else:
+                # Fallback to standard weights
+                print(f"[Phase 4] Regime weights not configured, using standard weights")
+                weights = config.get_weights().copy()
+        except Exception as e:
+            print(f"[Phase 4] Error detecting regime: {e}, using standard weights")
+            weights = config.get_weights().copy()
+    else:
+        # Phase 3: Use standard weights
+        weights = config.get_weights().copy()
+
+    # Apply sector adjustments (works with both regime and standard weights)
     sector_adjustments = config.get('sector_adjustments', {})
 
     if sector in sector_adjustments:

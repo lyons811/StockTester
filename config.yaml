@@ -355,25 +355,29 @@ sector_adjustments:
     threshold_overrides:
       pe_fair: 30
 
-# Phase 2: Optimized Weights (to be populated by weight optimizer)
+# Phase 4: Regime-Specific Optimized Weights (to be populated by Phase 4 optimizer)
 optimized_weights:
   bull_market:
-    trend_momentum: 0.40
-    volume: 0.15
+    trend_momentum: 0.30  # Placeholder - will be optimized in Phase 4
+    volume: 0.10
     fundamental: 0.20
-    market_context: 0.25
+    market_context: 0.20
+    advanced: 0.20  # Phase 3: Added advanced category
 
   bear_market:
-    trend_momentum: 0.30
-    volume: 0.20
-    fundamental: 0.30
+    trend_momentum: 0.25  # Placeholder - will be optimized in Phase 4
+    volume: 0.15
+    fundamental: 0.25
     market_context: 0.20
+    advanced: 0.15  # Phase 3: Added advanced category
 
 # Phase 2: Backtesting Configuration
 backtesting:
   default_tickers: [AAPL, MSFT, TSLA, NVDA, JPM, XOM, PFE, WMT]
-  lookback_years: 3
+  lookback_years: 7  # Phase 4: Extended to 7 years (2018-2025)
   holding_period_days: 60  # ~2-3 months
   rebalance_frequency_days: 30
-  start_date: "2022-01-01"
+  start_date: "2018-01-01"  # Phase 4: Extended from 2022-01-01
   end_date: "2025-01-01"
+  risk_free_rate: 0.025  # Phase 4: 2.5% annual risk-free rate for Sharpe/Sortino
+  use_regime_weights: false  # Phase 4: Enable after regime optimization

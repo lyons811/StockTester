@@ -1,11 +1,13 @@
 """
-Stock Scoring System - Phase 3
+Stock Scoring System - Phase 4
 CLI entry point for analyzing stocks, backtesting, and optimization.
 
 Usage:
   python main.py TICKER                    # Analyze a stock
   python main.py --backtest                # Run backtest on default portfolio
   python main.py --optimize-weights        # Optimize category weights
+  python main.py --walk-forward            # Run walk-forward optimization (Phase 4)
+  python main.py --optimize-regime         # Optimize regime-specific weights (Phase 4)
 Example: python main.py AAPL
 """
 
@@ -62,13 +64,25 @@ Data Sources:
     parser.add_argument(
         '--optimize-weights',
         action='store_true',
-        help='Run weight optimization using grid search (Phase 2)'
+        help='Run weight optimization using grid search (Phase 3)'
+    )
+
+    parser.add_argument(
+        '--walk-forward',
+        action='store_true',
+        help='Run walk-forward optimization with Sharpe ratio (Phase 4)'
+    )
+
+    parser.add_argument(
+        '--optimize-regime',
+        action='store_true',
+        help='Optimize regime-specific weights (bull/bear markets) (Phase 4)'
     )
 
     parser.add_argument(
         '--version',
         action='version',
-        version='Stock Scoring System v2.0.0 (Phase 2)'
+        version='Stock Scoring System v4.0.0 (Phase 4)'
     )
 
     # Parse arguments
@@ -145,9 +159,111 @@ Data Sources:
             print(f"\nOptimization Error: {str(e)}")
             sys.exit(1)
 
+    # Phase 4: Handle walk-forward optimization mode
+    if args.walk_forward:
+        from backtesting.engine import BacktestEngine
+        from backtesting.walk_forward import WalkForwardOptimizer
+        from utils.config import config
+
+        print("\n" + "=" * 80)
+        print("STOCK SCORING SYSTEM - WALK-FORWARD OPTIMIZATION (PHASE 4)")
+        print("=" * 80)
+
+        try:
+            # Get backtest config
+            backtest_config = config.get('backtesting', {})
+            tickers = backtest_config.get('default_tickers', ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'JPM', 'XOM', 'PFE', 'WMT'])
+            start_date = backtest_config.get('start_date', '2018-01-01')
+            end_date = backtest_config.get('end_date', '2025-01-01')
+
+            # Create backtest engine
+            engine = BacktestEngine(start_date, end_date)
+
+            # Create walk-forward optimizer
+            wf_optimizer = WalkForwardOptimizer(engine, train_period_years=2, test_period_years=1)
+
+            # Run walk-forward optimization with Sharpe ratio
+            results = wf_optimizer.run_walk_forward_optimization(
+                tickers=tickers,
+                objective='sharpe_ratio'  # Phase 4: Optimize for risk-adjusted returns
+            )
+
+            # Print comparison table
+            wf_optimizer.print_period_comparison(results)
+
+            print("\n✅ Walk-forward optimization complete!")
+            print(f"Aggregated out-of-sample Sharpe ratio: {results['aggregated_test_metrics']['risk']['sharpe_ratio']:.3f}")
+
+            sys.exit(0)
+
+        except Exception as e:
+            print(f"\nWalk-Forward Optimization Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
+    # Phase 4: Handle regime-specific optimization mode
+    if args.optimize_regime:
+        from backtesting.engine import BacktestEngine
+        from backtesting.optimizer import WeightOptimizer
+        from utils.config import config
+        import yaml
+
+        print("\n" + "=" * 80)
+        print("STOCK SCORING SYSTEM - REGIME-SPECIFIC OPTIMIZATION (PHASE 4)")
+        print("=" * 80)
+
+        try:
+            # Get backtest config
+            backtest_config = config.get('backtesting', {})
+            tickers = backtest_config.get('default_tickers', ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'JPM', 'XOM', 'PFE', 'WMT'])
+            start_date = '2018-01-01'
+            end_date = '2024-01-01'  # Train on 2018-2023, save 2024-2025 for validation
+
+            # Create backtest engine
+            engine = BacktestEngine(start_date, end_date)
+
+            # Run regime-specific optimizer
+            optimizer = WeightOptimizer(engine)
+            regime_weights = optimizer.optimize_by_regime_auto(
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                objective='sharpe_ratio'
+            )
+
+            # Save regime weights to config
+            print("\n" + "=" * 80)
+            print("SAVING REGIME WEIGHTS TO CONFIG.YAML")
+            print("=" * 80)
+
+            # Read current config
+            with open('config.yaml', 'r') as f:
+                config_data = yaml.safe_load(f)
+
+            # Update optimized_weights section
+            config_data['optimized_weights'] = regime_weights
+
+            # Write back to config.yaml
+            with open('config.yaml', 'w') as f:
+                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+            print("✅ Regime-specific weights saved to config.yaml")
+            print("\nTo enable regime-adaptive scoring, set:")
+            print("  backtesting:")
+            print("    use_regime_weights: true")
+
+            sys.exit(0)
+
+        except Exception as e:
+            print(f"\nRegime Optimization Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
     # Standard mode: Validate ticker
     if not args.ticker:
-        print("Error: Ticker symbol required (or use --backtest/--optimize-weights)")
+        print("Error: Ticker symbol required (or use --backtest/--optimize-weights/--walk-forward/--optimize-regime)")
         parser.print_help()
         sys.exit(1)
 
@@ -158,7 +274,7 @@ Data Sources:
 
     # Display welcome message
     print("\n" + "=" * 64)
-    print("STOCK SCORING SYSTEM - PHASE 3")
+    print("STOCK SCORING SYSTEM - PHASE 4")
     print("Based on Professional Hedge Fund Methodologies")
     print("=" * 64)
     print(f"\nAnalyzing: {ticker}")
