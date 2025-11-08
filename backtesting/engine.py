@@ -52,23 +52,25 @@ class BacktestEngine:
         self.holding_period_days = holding_period_days
         self.trades: List[BacktestTrade] = []
 
-    def run_backtest(self, tickers: List[str], rebalance_frequency_days: int = 30) -> List[BacktestTrade]:
+    def run_backtest(self, tickers: List[str], rebalance_frequency_days: int = 30, quiet: bool = False) -> List[BacktestTrade]:
         """
         Run backtest on a list of tickers.
 
         Args:
             tickers: List of stock ticker symbols
             rebalance_frequency_days: Days between rebalancing (default 30)
+            quiet: If True, suppress intermediate messages (default: False)
 
         Returns:
             List of BacktestTrade objects
         """
-        print(f"\n{'='*60}")
-        print(f"BACKTESTING: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
-        print(f"Tickers: {', '.join(tickers)}")
-        print(f"Holding Period: {self.holding_period_days} days (~{self.holding_period_days // 30} months)")
-        print(f"Rebalance Frequency: {rebalance_frequency_days} days")
-        print(f"{'='*60}\n")
+        if not quiet:
+            print(f"\n{'='*60}")
+            print(f"BACKTESTING: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
+            print(f"Tickers: {', '.join(tickers)}")
+            print(f"Holding Period: {self.holding_period_days} days (~{self.holding_period_days // 30} months)")
+            print(f"Rebalance Frequency: {rebalance_frequency_days} days")
+            print(f"{'='*60}\n")
 
         self.trades = []
 
@@ -77,7 +79,8 @@ class BacktestEngine:
         trade_count = 0
 
         while current_date <= self.end_date:
-            print(f"Processing date: {current_date.strftime('%Y-%m-%d')}", end='\r')
+            if not quiet:
+                print(f"Processing date: {current_date.strftime('%Y-%m-%d')}", end='\r')
 
             for ticker in tickers:
                 # Generate score at this point in time
@@ -90,7 +93,8 @@ class BacktestEngine:
             # Move to next rebalance date
             current_date += timedelta(days=rebalance_frequency_days)
 
-        print(f"\nBacktest complete: {trade_count} trades executed")
+        if not quiet:
+            print(f"\nBacktest complete: {trade_count} trades executed")
         return self.trades
 
     def _evaluate_trade(self, ticker: str, entry_date: datetime) -> Optional[BacktestTrade]:

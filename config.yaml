@@ -1,24 +1,16 @@
-# Stock Scoring System Configuration
-# Based on professional hedge fund methodologies
-
-# Category Weights (Phase 3 - with advanced features)
 weights:
-  trend_momentum: 0.26 
-  volume: 0.10
+  trend_momentum: 0.26
+  volume: 0.1
   fundamental: 0.22
   market_context: 0.21
-  advanced:  0.20  # Phase 3: Earnings, analyst, short interest, options
-
-# Technical Indicator Parameters
+  advanced: 0.2
 technical:
   ma:
     short_period: 50
     long_period: 200
-
   momentum:
-    lookback_days: 252  # ~12 months
-    skip_recent_days: 21  # Skip most recent month
-
+    lookback_days: 252
+    skip_recent_days: 21
   rsi:
     period: 14
     standard_overbought: 70
@@ -26,105 +18,78 @@ technical:
     volatile_overbought: 80
     volatile_oversold: 20
     high_beta_threshold: 1.5
-
   macd:
     fast_period: 12
     slow_period: 26
     signal_period: 9
-
-# Volume Analysis Parameters
 volume:
-  recent_period: 15  # Days for recent average
-  previous_period: 15  # Days for previous average
-  accumulation_threshold_min: 0.10  # 10% increase
-  accumulation_threshold_max: 0.20  # 20% increase
-  distribution_threshold: 0.30  # 30% increase
-  price_volume_period: 20  # Days for volume average
-
-# Fundamental Thresholds
+  recent_period: 15
+  previous_period: 15
+  accumulation_threshold_min: 0.1
+  accumulation_threshold_max: 0.2
+  distribution_threshold: 0.3
+  price_volume_period: 20
 fundamental:
   pe:
     value: 15
     fair: 25
     speculative: 50
-
   peg:
     attractive: 1.0
     fair: 2.0
-
   roe:
-    quality_threshold: 15.0  # 15%
-
+    quality_threshold: 15.0
   debt_equity:
     healthy_threshold: 1.0
-    veto_threshold: 3.0  # Automatic veto
-
+    veto_threshold: 3.0
   cash_flow_quality:
     quality_threshold: 1.0
-    veto_threshold: 0.5  # For 3+ consecutive quarters
-
-# Market Context Parameters
+    veto_threshold: 0.5
 market:
   vix:
     extreme_fear: 30
     moderate_fear: 20
     normal_low: 12
-
   sector_relative:
-    outperform_threshold: 5.0  # 5%
-    underperform_threshold: -5.0  # -5%
+    outperform_threshold: 5.0
+    underperform_threshold: -5.0
     lookback_days: 60
-
   regime:
-    ma_period: 200  # Days for S&P 500 moving average
-
-# Scoring Ranges (for normalization)
+    ma_period: 200
 score_ranges:
   trend_max: 6.0
   volume_max: 3.0
   fundamental_max: 5.0
   market_max: 4.0
-  advanced_max: 10.0  # Phase 3: Max raw score from advanced indicators
-
-# Signal Thresholds
+  advanced_max: 10.0
 signals:
   strong_buy: 6.0
   buy: 3.0
   neutral_high: 3.0
   neutral_low: -3.0
   sell: -6.0
-
-# Position Sizing (% of portfolio)
 position_sizing:
   score_7_plus: 5.0
   score_5_plus: 3.0
   score_3_plus: 1.5
   score_below_3: 0.5
-  max_position: 5.0  # Maximum position size
-
-  # Volatility adjustments
+  max_position: 5.0
   high_beta_threshold: 1.5
   high_beta_multiplier: 0.7
   low_beta_threshold: 0.7
   low_beta_multiplier: 1.3
-
-  # Market regime adjustments
   bear_market_multiplier: 0.8
   bull_market_multiplier: 1.1
-
-# Automatic Veto Rules
 vetoes:
-  min_avg_volume: 500000  # Minimum average daily volume
-  min_market_cap: 300000000  # $300 million
-  earnings_days_before: 7  # Days before earnings to avoid
-  max_decline_60d: 0.50  # 50% decline in 60 days
-  min_negative_earnings_quarters: 4  # Consecutive quarters
+  min_avg_volume: 500000
+  min_market_cap: 300000000
+  earnings_days_before: 7
+  max_decline_60d: 0.5
+  min_negative_earnings_quarters: 4
   max_debt_equity: 3.0
-  min_cash_flow_quality_quarters: 3  # For veto threshold
-
-# Confidence Adjustments
+  min_cash_flow_quality_quarters: 3
 confidence:
-  strong_agreement_threshold: 3  # Categories agreeing
+  strong_agreement_threshold: 3
   strong_agreement_multiplier: 1.3
   major_conflict_multiplier: 0.7
   high_vix_threshold: 40
@@ -132,8 +97,6 @@ confidence:
   trend_fundamental_conflict_threshold_trend: 30
   trend_fundamental_conflict_threshold_fundamental: -20
   trend_fundamental_conflict_multiplier: 0.75
-
-# Sector to ETF Mapping
 sector_etfs:
   Technology: XLK
   Financials: XLF
@@ -156,71 +119,53 @@ sector_etfs:
   Consumer Staples: XLP
   Consumer Defensive: XLP
   default: SPY
-
-# Data Cache Settings
 cache:
   enabled: true
   cache_dir: cache
   cache_duration_hours: 24
-  price_cache_duration_hours: 1  # More frequent refresh for price data
-
-# Market Indices
+  price_cache_duration_hours: 1
 indices:
   sp500: ^GSPC
   vix: ^VIX
-
-# Phase 3: Advanced Features Configuration
 advanced_features:
-  # Earnings Quality Analysis
   earnings_quality:
-    consecutive_beat_threshold: 3  # Quarters with earnings beats
-    consecutive_miss_threshold: 3  # Quarters with earnings misses
-    strong_yoy_growth_threshold: 15.0  # 15% YoY growth = bonus
-    weak_yoy_growth_threshold: -10.0  # Negative growth = penalty
-
-  # Analyst Revisions
+    consecutive_beat_threshold: 3
+    consecutive_miss_threshold: 3
+    strong_yoy_growth_threshold: 15.0
+    weak_yoy_growth_threshold: -10.0
   analyst_revisions:
-    lookback_days: 30  # Track upgrades/downgrades in last 30 days
-    significant_upgrade_threshold: 3  # Net upgrades for max score
-    significant_downgrade_threshold: 3  # Net downgrades for min score
-
-  # Short Interest Analysis
+    lookback_days: 30
+    significant_upgrade_threshold: 3
+    significant_downgrade_threshold: 3
   short_interest:
     enabled: true
-    high_threshold: 20.0  # 20%+ short float = squeeze potential
-    moderate_threshold: 10.0  # 10-20% = moderate
-    low_threshold: 2.0  # <2% = very low interest
-    days_to_cover_high: 5.0  # 5+ days = potential squeeze
-
-  # Options Flow Analysis
+    high_threshold: 20.0
+    moderate_threshold: 10.0
+    low_threshold: 2.0
+    days_to_cover_high: 5.0
   options_flow:
     enabled: true
-    unusual_volume_multiplier: 2.0  # Volume > 2x open interest
-    bullish_pc_ratio_threshold: 0.7  # P/C < 0.7 = bullish
-    bearish_pc_ratio_threshold: 1.3  # P/C > 1.3 = bearish
-    neutral_pc_min: 1.0  # Neutral range
+    unusual_volume_multiplier: 2.0
+    bullish_pc_ratio_threshold: 0.7
+    bearish_pc_ratio_threshold: 1.3
+    neutral_pc_min: 1.0
     neutral_pc_max: 1.3
-
-# Phase 2: Sector-Specific Adjustments
-# Each sector gets custom weight multipliers and threshold overrides
 sector_adjustments:
   Technology:
     weight_multipliers:
-      trend_momentum: 1.2  # Tech stocks = momentum heavy
-      fundamental: 0.9     # Less emphasis on traditional valuation
+      trend_momentum: 1.2
+      fundamental: 0.9
     threshold_overrides:
-      pe_fair: 35          # Higher P/E acceptable for tech
+      pe_fair: 35
       pe_expensive: 60
-      peg_attractive: 1.5  # Growth-adjusted valuation more important
-
+      peg_attractive: 1.5
   Financials:
     weight_multipliers:
-      fundamental: 1.3     # Fundamentals critical for banks
-      trend_momentum: 0.9  # Less momentum-driven
+      fundamental: 1.3
+      trend_momentum: 0.9
     threshold_overrides:
-      roe_quality: 12.0    # Lower ROE threshold for financials
-      debt_equity_healthy: 3.0  # Banks naturally have higher leverage
-
+      roe_quality: 12.0
+      debt_equity_healthy: 3.0
   Financial Services:
     weight_multipliers:
       fundamental: 1.3
@@ -228,15 +173,13 @@ sector_adjustments:
     threshold_overrides:
       roe_quality: 12.0
       debt_equity_healthy: 3.0
-
   Healthcare:
     weight_multipliers:
-      fundamental: 1.2     # Quality matters
-      market_context: 0.9  # More defensive, less market-driven
+      fundamental: 1.2
+      market_context: 0.9
     threshold_overrides:
-      pe_fair: 30          # Pharma can have higher P/E
-      roe_quality: 12.0    # R&D heavy companies
-
+      pe_fair: 30
+      roe_quality: 12.0
   Health Care:
     weight_multipliers:
       fundamental: 1.2
@@ -244,37 +187,32 @@ sector_adjustments:
     threshold_overrides:
       pe_fair: 30
       roe_quality: 12.0
-
   Energy:
     weight_multipliers:
-      market_context: 1.3  # Highly cyclical
-      volume: 1.2          # Institutional flows important
+      market_context: 1.3
+      volume: 1.2
       fundamental: 0.9
     threshold_overrides:
-      debt_equity_healthy: 1.5  # Capital intensive industry
-
+      debt_equity_healthy: 1.5
   Consumer Cyclical:
     weight_multipliers:
-      market_context: 1.2  # Economic cycle sensitive
+      market_context: 1.2
       trend_momentum: 1.1
     threshold_overrides:
       pe_fair: 28
-
   Consumer Discretionary:
     weight_multipliers:
       market_context: 1.2
       trend_momentum: 1.1
     threshold_overrides:
       pe_fair: 28
-
   Consumer Defensive:
     weight_multipliers:
-      fundamental: 1.2     # Quality and stability matter
-      trend_momentum: 0.9  # Less momentum-driven
-      market_context: 0.9  # More defensive
+      fundamental: 1.2
+      trend_momentum: 0.9
+      market_context: 0.9
     threshold_overrides:
       roe_quality: 12.0
-
   Consumer Staples:
     weight_multipliers:
       fundamental: 1.2
@@ -282,22 +220,19 @@ sector_adjustments:
       market_context: 0.9
     threshold_overrides:
       roe_quality: 12.0
-
   Industrials:
     weight_multipliers:
-      volume: 1.1          # Institutional interest important
-      market_context: 1.1  # Economic cycle sensitive
+      volume: 1.1
+      market_context: 1.1
     threshold_overrides:
       debt_equity_healthy: 1.2
-
   Basic Materials:
     weight_multipliers:
-      market_context: 1.3  # Highly cyclical
+      market_context: 1.3
       volume: 1.2
-      fundamental: 0.8     # Less emphasis on P/E (cyclical earnings)
+      fundamental: 0.8
     threshold_overrides:
       debt_equity_healthy: 1.3
-
   Materials:
     weight_multipliers:
       market_context: 1.3
@@ -305,25 +240,22 @@ sector_adjustments:
       fundamental: 0.8
     threshold_overrides:
       debt_equity_healthy: 1.3
-
   Real Estate:
     weight_multipliers:
-      fundamental: 1.3     # Cash flow and debt critical
+      fundamental: 1.3
       volume: 0.9
     threshold_overrides:
-      debt_equity_healthy: 2.0  # REITs have higher leverage
-      cash_flow_quality: 0.9    # Different cash flow dynamics
-
+      debt_equity_healthy: 2.0
+      cash_flow_quality: 0.9
   Utilities:
     weight_multipliers:
-      fundamental: 1.2     # Stable cash flows matter
-      trend_momentum: 0.8  # Very low momentum
-      market_context: 0.9  # Defensive sector
+      fundamental: 1.2
+      trend_momentum: 0.8
+      market_context: 0.9
     threshold_overrides:
-      debt_equity_healthy: 2.0  # Capital intensive
-      pe_fair: 20          # Lower valuation multiples
+      debt_equity_healthy: 2.0
+      pe_fair: 20
       roe_quality: 10.0
-
   Utility:
     weight_multipliers:
       fundamental: 1.2
@@ -333,51 +265,51 @@ sector_adjustments:
       debt_equity_healthy: 2.0
       pe_fair: 20
       roe_quality: 10.0
-
   Communication Services:
     weight_multipliers:
       trend_momentum: 1.1
       volume: 1.1
     threshold_overrides:
       pe_fair: 30
-
   Communication:
     weight_multipliers:
       trend_momentum: 1.1
       volume: 1.1
     threshold_overrides:
       pe_fair: 30
-
   Telecommunication Services:
     weight_multipliers:
       trend_momentum: 1.1
       volume: 1.1
     threshold_overrides:
       pe_fair: 30
-
-# Phase 4: Regime-Specific Optimized Weights (to be populated by Phase 4 optimizer)
 optimized_weights:
   bull_market:
-    trend_momentum: 0.30  # Placeholder - will be optimized in Phase 4
-    volume: 0.10
-    fundamental: 0.20
-    market_context: 0.20
-    advanced: 0.20  # Phase 3: Added advanced category
-
+    trend_momentum: 0.25510204081632654
+    volume: 0.10204081632653061
+    fundamental: 0.22448979591836735
+    market_context: 0.21428571428571427
+    advanced: 0.20408163265306123
   bear_market:
-    trend_momentum: 0.25  # Placeholder - will be optimized in Phase 4
-    volume: 0.15
-    fundamental: 0.25
-    market_context: 0.20
-    advanced: 0.15  # Phase 3: Added advanced category
-
-# Phase 2: Backtesting Configuration
+    trend_momentum: 0.25510204081632654
+    volume: 0.10204081632653061
+    fundamental: 0.22448979591836735
+    market_context: 0.21428571428571427
+    advanced: 0.20408163265306123
 backtesting:
-  default_tickers: [AAPL, MSFT, TSLA, NVDA, JPM, XOM, PFE, WMT]
-  lookback_years: 7  # Phase 4: Extended to 7 years (2018-2025)
-  holding_period_days: 60  # ~2-3 months
+  default_tickers:
+  - AAPL
+  - MSFT
+  - TSLA
+  - NVDA
+  - JPM
+  - XOM
+  - PFE
+  - WMT
+  lookback_years: 7
+  holding_period_days: 60
   rebalance_frequency_days: 30
-  start_date: "2018-01-01"  # Phase 4: Extended from 2022-01-01
-  end_date: "2025-01-01"
-  risk_free_rate: 0.025  # Phase 4: 2.5% annual risk-free rate for Sharpe/Sortino
-  use_regime_weights: false  # Phase 4: Enable after regime optimization
+  start_date: '2018-01-01'
+  end_date: '2025-01-01'
+  risk_free_rate: 0.025
+  use_regime_weights: false

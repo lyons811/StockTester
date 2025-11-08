@@ -58,14 +58,15 @@ def main():
 
     try:
         engine = BacktestEngine(start_date, end_date)
-        wf_optimizer = WalkForwardOptimizer(engine, train_period_years=2, test_period_years=1)
+        wf_optimizer = WalkForwardOptimizer(engine, train_period_years=2, test_period_years=1, quiet=True)
 
         wf_results = wf_optimizer.run_walk_forward_optimization(
             tickers=tickers,
-            objective='sharpe_ratio'
+            objective='sharpe_ratio',
+            quiet=True
         )
 
-        wf_optimizer.print_period_comparison(wf_results)
+        wf_optimizer.print_period_comparison(wf_results, quiet=True)
 
         agg_metrics = wf_results['aggregated_test_metrics']
         print(f"\n✅ Walk-forward optimization complete!")
@@ -92,13 +93,14 @@ def main():
         train_end = '2024-01-01'
 
         engine = BacktestEngine(start_date, train_end)
-        optimizer = WeightOptimizer(engine)
+        optimizer = WeightOptimizer(engine, quiet=True)
 
         regime_weights = optimizer.optimize_by_regime_auto(
             tickers=tickers,
             start_date=start_date,
             end_date=train_end,
-            objective='sharpe_ratio'
+            objective='sharpe_ratio',
+            quiet=True
         )
 
         print(f"\n✅ Regime-specific optimization complete!")
@@ -138,7 +140,7 @@ def main():
         report.add_walk_forward_results(wf_results)
 
         # Add regime comparison
-        classifier = RegimeClassifier()
+        classifier = RegimeClassifier(quiet=True)
         classifier.fetch_sp500_data(start_date=start_date, end_date=end_date)
         classifier.calculate_regimes()
 

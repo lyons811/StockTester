@@ -57,7 +57,8 @@ class WalkForwardOptimizer:
         self,
         backtest_engine: BacktestEngine,
         train_period_years: int = 2,
-        test_period_years: int = 1
+        test_period_years: int = 1,
+        quiet: bool = False
     ):
         """
         Initialize walk-forward optimizer.
@@ -66,10 +67,12 @@ class WalkForwardOptimizer:
             backtest_engine: Configured backtest engine
             train_period_years: Minimum training period (default: 2 years)
             test_period_years: Test period length (default: 1 year)
+            quiet: If True, suppress intermediate messages (default: False)
         """
         self.engine = backtest_engine
         self.train_period_years = train_period_years
         self.test_period_years = test_period_years
+        self.quiet = quiet
 
     def generate_walk_forward_periods(
         self,
@@ -131,7 +134,8 @@ class WalkForwardOptimizer:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         weight_ranges: Optional[Dict[str, List[float]]] = None,
-        objective: str = "sharpe_ratio"
+        objective: str = "sharpe_ratio",
+        quiet: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         Run full walk-forward optimization and validation.
@@ -142,10 +146,15 @@ class WalkForwardOptimizer:
             end_date: End date (default: from config)
             weight_ranges: Weight ranges for grid search (default: standard ranges)
             objective: Optimization objective ("sharpe_ratio", "win_rate", or "avg_return")
+            quiet: If True, suppress intermediate messages (default: use instance setting)
 
         Returns:
             Dictionary with aggregated results and per-period breakdown
         """
+        # Use instance setting if not overridden
+        if quiet is None:
+            quiet = self.quiet
+
         # Use config defaults if not specified
         if start_date is None:
             backtest_config = config.get('backtesting', {})
@@ -154,13 +163,14 @@ class WalkForwardOptimizer:
             backtest_config = config.get('backtesting', {})
             end_date = backtest_config.get('end_date', '2025-01-01')
 
-        print("\n" + "="*80)
-        print("WALK-FORWARD OPTIMIZATION (Phase 4)")
-        print("="*80)
-        print(f"Period: {start_date} to {end_date}")
-        print(f"Objective: {objective}")
-        print(f"Strategy: Expanding window (train on ALL past data)")
-        print("="*80 + "\n")
+        if not quiet:
+            print("\n" + "="*80)
+            print("WALK-FORWARD OPTIMIZATION (Phase 4)")
+            print("="*80)
+            print(f"Period: {start_date} to {end_date}")
+            print(f"Objective: {objective}")
+            print(f"Strategy: Expanding window (train on ALL past data)")
+            print("="*80 + "\n")
 
         # Generate periods
         periods = self.generate_walk_forward_periods(start_date, end_date)
@@ -174,25 +184,27 @@ class WalkForwardOptimizer:
                 'success': False
             }
 
-        print(f"Generated {len(periods)} walk-forward periods:\n")
-        for i, period in enumerate(periods, 1):
-            print(f"  Period {i}:")
-            print(f"    Train: {period.train_start} to {period.train_end} ({period.train_years:.1f} years)")
-            print(f"    Test:  {period.test_start} to {period.test_end} ({period.test_years:.1f} years)")
+        if not quiet:
+            print(f"Generated {len(periods)} walk-forward periods:\n")
+            for i, period in enumerate(periods, 1):
+                print(f"  Period {i}:")
+                print(f"    Train: {period.train_start} to {period.train_end} ({period.train_years:.1f} years)")
+                print(f"    Test:  {period.test_start} to {period.test_end} ({period.test_years:.1f} years)")
 
-        print("\n" + "-"*80 + "\n")
+            print("\n" + "-"*80 + "\n")
 
         # Run optimization for each period
         results = []
         all_test_trades = []
 
         for i, period in enumerate(periods, 1):
-            print(f"\n{'='*80}")
-            print(f"PERIOD {i}/{len(periods)}")
-            print(f"{'='*80}")
+            if not quiet:
+                print(f"\n{'='*80}")
+                print(f"PERIOD {i}/{len(periods)}")
+                print(f"{'='*80}")
 
-            # Optimize on training period
-            print(f"\n[1/2] Optimizing weights on training data ({period.train_start} to {period.train_end})...")
+                # Optimize on training period
+                print(f"\n[1/2] Optimizing weights on training data ({period.train_start} to {period.train_end})...")
 
             # Temporarily update engine date range for training
             original_start = self.engine.start_date
@@ -202,42 +214,46 @@ class WalkForwardOptimizer:
             self.engine.end_date = datetime.strptime(period.train_end, "%Y-%m-%d")
 
             # Run optimization
-            optimizer = WeightOptimizer(self.engine)
+            optimizer = WeightOptimizer(self.engine, quiet=quiet)
             best_weights, train_score = optimizer.optimize_weights(
                 tickers=tickers,
                 weight_ranges=weight_ranges,
-                objective=objective
+                objective=objective,
+                quiet=quiet
             )
 
-            print(f"\nOptimized weights (training): {best_weights}")
-            print(f"Training {objective}: {train_score:.4f}")
+            if not quiet:
+                print(f"\nOptimized weights (training): {best_weights}")
+                print(f"Training {objective}: {train_score:.4f}")
 
             # Get training metrics
-            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30)
+            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=quiet)
             train_metrics_obj = PerformanceMetrics(trades)
             train_overall = train_metrics_obj.calculate_overall_metrics()
             train_risk = train_metrics_obj.calculate_risk_adjusted_metrics()
 
-            # Test on out-of-sample period
-            print(f"\n[2/2] Testing on out-of-sample data ({period.test_start} to {period.test_end})...")
+            if not quiet:
+                # Test on out-of-sample period
+                print(f"\n[2/2] Testing on out-of-sample data ({period.test_start} to {period.test_end})...")
 
             self.engine.start_date = datetime.strptime(period.test_start, "%Y-%m-%d")
             self.engine.end_date = datetime.strptime(period.test_end, "%Y-%m-%d")
 
             # Apply optimized weights to config and run backtest
             self._set_weights(best_weights)
-            test_trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30)
+            test_trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=quiet)
 
             test_metrics_obj = PerformanceMetrics(test_trades)
             test_overall = test_metrics_obj.calculate_overall_metrics()
             test_risk = test_metrics_obj.calculate_risk_adjusted_metrics()
 
-            print(f"\nOUT-OF-SAMPLE TEST RESULTS:")
-            print(f"  Total Trades: {test_overall['total_trades']}")
-            print(f"  Win Rate: {test_overall['win_rate_pct']:.1f}%")
-            print(f"  Avg Return: {test_overall['avg_return_pct']:+.2f}%")
-            print(f"  Sharpe Ratio: {test_risk['sharpe_ratio']:.3f}")
-            print(f"  Max Drawdown: {test_risk['max_drawdown_pct']:.2f}%")
+            if not quiet:
+                print(f"\nOUT-OF-SAMPLE TEST RESULTS:")
+                print(f"  Total Trades: {test_overall['total_trades']}")
+                print(f"  Win Rate: {test_overall['win_rate_pct']:.1f}%")
+                print(f"  Avg Return: {test_overall['avg_return_pct']:+.2f}%")
+                print(f"  Sharpe Ratio: {test_risk['sharpe_ratio']:.3f}")
+                print(f"  Max Drawdown: {test_risk['max_drawdown_pct']:.2f}%")
 
             # Store results
             result = WalkForwardResult(
@@ -255,13 +271,14 @@ class WalkForwardOptimizer:
             self.engine.end_date = original_end
 
         # Aggregate all test results
-        print("\n" + "="*80)
-        print("AGGREGATED OUT-OF-SAMPLE RESULTS (All Test Periods)")
-        print("="*80)
-
         aggregated_metrics = PerformanceMetrics(all_test_trades)
         agg_overall = aggregated_metrics.calculate_overall_metrics()
         agg_risk = aggregated_metrics.calculate_risk_adjusted_metrics()
+
+        # Always print aggregated results (even in quiet mode) - this is the key output
+        print("\n" + "="*80)
+        print("AGGREGATED OUT-OF-SAMPLE RESULTS (All Test Periods)")
+        print("="*80)
 
         print(f"\nTotal Test Trades: {agg_overall['total_trades']}")
         print(f"Win Rate: {agg_overall['win_rate_pct']:.1f}%")
@@ -298,13 +315,17 @@ class WalkForwardOptimizer:
         if hasattr(config, '_config') and config._config:
             config._config['weights'] = weights.copy()
 
-    def print_period_comparison(self, results: Dict[str, Any]):
+    def print_period_comparison(self, results: Dict[str, Any], quiet: bool = False):
         """
         Print comparison table across all walk-forward periods.
 
         Args:
             results: Results from run_walk_forward_optimization()
+            quiet: If True, suppress output (default: False)
         """
+        if quiet:
+            return
+
         if not results.get('success') or not results['periods']:
             print("No results to display")
             return

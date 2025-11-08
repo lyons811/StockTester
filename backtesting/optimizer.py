@@ -24,20 +24,23 @@ class WeightOptimizer:
     performance on historical data.
     """
 
-    def __init__(self, backtest_engine: BacktestEngine):
+    def __init__(self, backtest_engine: BacktestEngine, quiet: bool = False):
         """
         Initialize optimizer.
 
         Args:
             backtest_engine: Configured backtest engine
+            quiet: If True, suppress intermediate messages (default: False)
         """
         self.engine = backtest_engine
+        self.quiet = quiet
 
     def optimize_weights(
         self,
         tickers: List[str],
         weight_ranges: Optional[Dict[str, List[float]]] = None,
-        objective: str = "win_rate"
+        objective: str = "win_rate",
+        quiet: Optional[bool] = None
     ) -> Tuple[Dict[str, float], float]:
         """
         Find optimal weights using grid search.
@@ -46,10 +49,15 @@ class WeightOptimizer:
             tickers: List of tickers to test on
             weight_ranges: Dict mapping categories to weight ranges to test
             objective: Optimization objective ("win_rate", "avg_return", or "sharpe_ratio")
+            quiet: If True, suppress intermediate messages (default: use instance setting)
 
         Returns:
             Tuple of (best_weights, best_score)
         """
+        # Use instance setting if not overridden
+        if quiet is None:
+            quiet = self.quiet
+
         if weight_ranges is None:
             # Default ranges centered around current values (Phase 3)
             weight_ranges = {
@@ -60,12 +68,13 @@ class WeightOptimizer:
                 'advanced': [0.10, 0.15, 0.20]
             }
 
-        print("\n" + "="*70)
-        print("WEIGHT OPTIMIZATION")
-        print("="*70)
-        print(f"Objective: {objective}")
-        print(f"Test combinations: {self._count_combinations(weight_ranges)}")
-        print("="*70 + "\n")
+        if not quiet:
+            print("\n" + "="*70)
+            print("WEIGHT OPTIMIZATION")
+            print("="*70)
+            print(f"Objective: {objective}")
+            print(f"Test combinations: {self._count_combinations(weight_ranges)}")
+            print("="*70 + "\n")
 
         best_weights = None
         best_score = -float('inf')
@@ -86,13 +95,14 @@ class WeightOptimizer:
             combination_num += 1
             weights_dict = dict(zip(categories, weights_tuple))
 
-            print(f"Testing combination {combination_num}: {self._format_weights(weights_dict)}", end='\r')
+            if not quiet:
+                print(f"Testing combination {combination_num}: {self._format_weights(weights_dict)}", end='\r')
 
             # Temporarily update config with these weights
             self._set_weights(weights_dict)
 
             # Run backtest
-            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30)
+            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=True)  # Always quiet during grid search
 
             # Calculate objective score
             if objective == "win_rate":
@@ -128,27 +138,30 @@ class WeightOptimizer:
                 best_score = score
                 best_weights = weights_dict.copy()
 
-        print(f"\nOptimization complete: Tested {combination_num} combinations\n")
+        if not quiet:
+            print(f"\nOptimization complete: Tested {combination_num} combinations\n")
 
-        # Print results
-        print("="*70)
-        print("OPTIMIZATION RESULTS")
-        print("="*70)
-        if best_weights:
-            # Format score based on objective type
-            if objective == "sharpe_ratio":
-                score_str = f"{best_score:.4f}"
-            elif objective in ["win_rate", "avg_return"]:
-                score_str = f"{best_score:.2f}%"
+            # Print results
+            print("="*70)
+            print("OPTIMIZATION RESULTS")
+            print("="*70)
+            if best_weights:
+                # Format score based on objective type
+                if objective == "sharpe_ratio":
+                    score_str = f"{best_score:.4f}"
+                elif objective in ["win_rate", "avg_return"]:
+                    score_str = f"{best_score:.2f}%"
+                else:
+                    score_str = f"{best_score:.4f}"
+
+                print(f"\nBest {objective}: {score_str}")
+                print(f"\nOptimal Weights:")
+                for category, weight in best_weights.items():
+                    print(f"  {category:<20}: {weight:.2f} ({weight*100:.0f}%)")
             else:
-                score_str = f"{best_score:.4f}"
+                print("\nNo valid weight combinations found!")
 
-            print(f"\nBest {objective}: {score_str}")
-            print(f"\nOptimal Weights:")
-            for category, weight in best_weights.items():
-                print(f"  {category:<20}: {weight:.2f} ({weight*100:.0f}%)")
-        else:
-            print("\nNo valid weight combinations found!")
+        if not best_weights:
             best_weights = config.get_weights()  # Use default weights
 
         # Restore original weights
@@ -214,7 +227,8 @@ class WeightOptimizer:
         start_date: str,
         end_date: str,
         weight_ranges: Optional[Dict[str, List[float]]] = None,
-        objective: str = "sharpe_ratio"
+        objective: str = "sharpe_ratio",
+        quiet: Optional[bool] = None
     ) -> Dict[str, Dict[str, float]]:
         """
         Automatically optimize weights for bull and bear markets (Phase 4).
@@ -228,28 +242,36 @@ class WeightOptimizer:
             end_date: End of training period (YYYY-MM-DD)
             weight_ranges: Weight ranges for grid search (optional)
             objective: Optimization objective (default: "sharpe_ratio")
+            quiet: If True, suppress intermediate messages (default: use instance setting)
 
         Returns:
             Dict with 'bull_market' and 'bear_market' optimal weights
         """
-        print("\n" + "="*80)
-        print("AUTOMATIC REGIME-SPECIFIC OPTIMIZATION (Phase 4)")
-        print("="*80)
-        print(f"Training Period: {start_date} to {end_date}")
-        print(f"Objective: {objective}")
-        print(f"Method: Classify all days as Bull/Bear, optimize separately")
-        print("="*80 + "\n")
+        # Use instance setting if not overridden
+        if quiet is None:
+            quiet = self.quiet
+
+        if not quiet:
+            print("\n" + "="*80)
+            print("AUTOMATIC REGIME-SPECIFIC OPTIMIZATION (Phase 4)")
+            print("="*80)
+            print(f"Training Period: {start_date} to {end_date}")
+            print(f"Objective: {objective}")
+            print(f"Method: Classify all days as Bull/Bear, optimize separately")
+            print("="*80 + "\n")
 
         # Initialize regime classifier
-        classifier = RegimeClassifier()
+        classifier = RegimeClassifier(quiet=quiet)
         classifier.fetch_sp500_data(start_date=start_date, end_date=end_date)
         classifier.calculate_regimes()
 
         # Print regime statistics
-        classifier.print_regime_summary(start_date, end_date)
+        if not quiet:
+            classifier.print_regime_summary(start_date, end_date)
 
-        # Run original backtest to get all trades
-        print(f"\n[1/3] Running backtest on full period to identify regime per trade...")
+            # Run original backtest to get all trades
+            print(f"\n[1/3] Running backtest on full period to identify regime per trade...")
+
         original_start = self.engine.start_date
         original_end = self.engine.end_date
 
@@ -257,27 +279,30 @@ class WeightOptimizer:
         self.engine.end_date = datetime.strptime(end_date, "%Y-%m-%d")
 
         # Use current weights for initial backtest
-        all_trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30)
+        all_trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=True)  # Always quiet for initial scan
 
-        print(f"Total trades: {len(all_trades)}")
+        if not quiet:
+            print(f"Total trades: {len(all_trades)}")
 
         # Split trades by regime
         bull_trades = classifier.filter_trades_by_regime(all_trades, 'Bull')
         bear_trades = classifier.filter_trades_by_regime(all_trades, 'Bear')
 
-        print(f"Bull market trades: {len(bull_trades)} ({len(bull_trades)/len(all_trades)*100:.1f}%)")
-        print(f"Bear market trades: {len(bear_trades)} ({len(bear_trades)/len(all_trades)*100:.1f}%)")
+        if not quiet:
+            print(f"Bull market trades: {len(bull_trades)} ({len(bull_trades)/len(all_trades)*100:.1f}%)")
+            print(f"Bear market trades: {len(bear_trades)} ({len(bear_trades)/len(all_trades)*100:.1f}%)")
 
-        if len(bull_trades) < 10:
-            print("\nWARNING: Very few bull market trades, results may not be reliable")
-        if len(bear_trades) < 10:
-            print("\nWARNING: Very few bear market trades, results may not be reliable")
+            if len(bull_trades) < 10:
+                print("\nWARNING: Very few bull market trades, results may not be reliable")
+            if len(bear_trades) < 10:
+                print("\nWARNING: Very few bear market trades, results may not be reliable")
 
         results = {}
 
         # Optimize for bull market
-        print(f"\n[2/3] Optimizing weights for BULL MARKET...")
-        print(f"Will test on {len(bull_trades)} bull market trades")
+        if not quiet:
+            print(f"\n[2/3] Optimizing weights for BULL MARKET...")
+            print(f"Will test on {len(bull_trades)} bull market trades")
 
         # We need to create a custom optimization that only evaluates bull trades
         # For now, use a simplified approach: find longest bull period
@@ -287,7 +312,8 @@ class WeightOptimizer:
         if bull_periods:
             # Use the longest bull period for optimization
             longest_bull = max(bull_periods, key=lambda p: datetime.strptime(p[2], "%Y-%m-%d") - datetime.strptime(p[1], "%Y-%m-%d"))
-            print(f"Using longest bull period: {longest_bull[1]} to {longest_bull[2]}")
+            if not quiet:
+                print(f"Using longest bull period: {longest_bull[1]} to {longest_bull[2]}")
 
             self.engine.start_date = datetime.strptime(longest_bull[1], "%Y-%m-%d")
             self.engine.end_date = datetime.strptime(longest_bull[2], "%Y-%m-%d")
@@ -295,23 +321,27 @@ class WeightOptimizer:
             bull_weights, bull_score = self.optimize_weights(
                 tickers=tickers,
                 weight_ranges=weight_ranges,
-                objective=objective
+                objective=objective,
+                quiet=quiet
             )
             results['bull_market'] = bull_weights
         else:
-            print("No bull periods found, using default weights")
+            if not quiet:
+                print("No bull periods found, using default weights")
             results['bull_market'] = config.get_weights()
 
         # Optimize for bear market
-        print(f"\n[3/3] Optimizing weights for BEAR MARKET...")
-        print(f"Will test on {len(bear_trades)} bear market trades")
+        if not quiet:
+            print(f"\n[3/3] Optimizing weights for BEAR MARKET...")
+            print(f"Will test on {len(bear_trades)} bear market trades")
 
         bear_periods = [p for p in regime_periods if p[0] == 'Bear']
 
         if bear_periods:
             # Use the longest bear period for optimization
             longest_bear = max(bear_periods, key=lambda p: datetime.strptime(p[2], "%Y-%m-%d") - datetime.strptime(p[1], "%Y-%m-%d"))
-            print(f"Using longest bear period: {longest_bear[1]} to {longest_bear[2]}")
+            if not quiet:
+                print(f"Using longest bear period: {longest_bear[1]} to {longest_bear[2]}")
 
             self.engine.start_date = datetime.strptime(longest_bear[1], "%Y-%m-%d")
             self.engine.end_date = datetime.strptime(longest_bear[2], "%Y-%m-%d")
@@ -319,11 +349,13 @@ class WeightOptimizer:
             bear_weights, bear_score = self.optimize_weights(
                 tickers=tickers,
                 weight_ranges=weight_ranges,
-                objective=objective
+                objective=objective,
+                quiet=quiet
             )
             results['bear_market'] = bear_weights
         else:
-            print("No bear periods found, using default weights")
+            if not quiet:
+                print("No bear periods found, using default weights")
             results['bear_market'] = config.get_weights()
 
         # Restore original dates
@@ -331,22 +363,23 @@ class WeightOptimizer:
         self.engine.end_date = original_end
 
         # Print comparison
-        print("\n" + "="*80)
-        print("REGIME-SPECIFIC WEIGHTS COMPARISON")
-        print("="*80)
+        if not quiet:
+            print("\n" + "="*80)
+            print("REGIME-SPECIFIC WEIGHTS COMPARISON")
+            print("="*80)
 
-        print(f"\n{'Category':<20} {'Bull Market':<15} {'Bear Market':<15} {'Difference':<10}")
-        print("-"*80)
+            print(f"\n{'Category':<20} {'Bull Market':<15} {'Bear Market':<15} {'Difference':<10}")
+            print("-"*80)
 
-        for cat in results['bull_market'].keys():
-            bull_w = results['bull_market'][cat]
-            bear_w = results['bear_market'][cat]
-            diff = bull_w - bear_w
+            for cat in results['bull_market'].keys():
+                bull_w = results['bull_market'][cat]
+                bear_w = results['bear_market'][cat]
+                diff = bull_w - bear_w
 
-            print(f"{cat:<20} {bull_w:>6.2f} ({bull_w*100:>3.0f}%)   "
-                  f"{bear_w:>6.2f} ({bear_w*100:>3.0f}%)   {diff:>+6.2f}")
+                print(f"{cat:<20} {bull_w:>6.2f} ({bull_w*100:>3.0f}%)   "
+                      f"{bear_w:>6.2f} ({bear_w*100:>3.0f}%)   {diff:>+6.2f}")
 
-        print("="*80 + "\n")
+            print("="*80 + "\n")
 
         return results
 

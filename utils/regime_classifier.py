@@ -22,17 +22,19 @@ class RegimeClassifier:
     to adapt portfolio strategies to market conditions.
     """
 
-    def __init__(self, lookback_period: str = "10y"):
+    def __init__(self, lookback_period: str = "10y", quiet: bool = False):
         """
         Initialize regime classifier.
 
         Args:
             lookback_period: How far back to fetch S&P 500 data (default: 10y)
+            quiet: If True, suppress informational messages (default: False)
         """
         self.lookback_period = lookback_period
         self.sp500_data = None
         self.regime_df = None
         self._cache_valid = False
+        self.quiet = quiet
 
     def fetch_sp500_data(self, start_date: str = None, end_date: str = None):
         """
@@ -42,7 +44,8 @@ class RegimeClassifier:
             start_date: Start date (optional, overrides lookback_period)
             end_date: End date (optional, defaults to today)
         """
-        print(f"Fetching S&P 500 data for regime classification...")
+        if not self.quiet:
+            print(f"Fetching S&P 500 data for regime classification...")
 
         if start_date and end_date:
             # Use specific date range
@@ -54,7 +57,12 @@ class RegimeClassifier:
         if self.sp500_data.empty:
             raise ValueError("Failed to fetch S&P 500 data")
 
-        print(f"Fetched {len(self.sp500_data)} days of S&P 500 data")
+        # Flatten MultiIndex columns if present (happens with single ticker downloads)
+        if isinstance(self.sp500_data.columns, pd.MultiIndex):
+            self.sp500_data.columns = self.sp500_data.columns.get_level_values(0)
+
+        if not self.quiet:
+            print(f"Fetched {len(self.sp500_data)} days of S&P 500 data")
         self._cache_valid = False
 
     def calculate_regimes(self, ma_period: int = 200) -> pd.DataFrame:
@@ -74,14 +82,12 @@ class RegimeClassifier:
         df = self.sp500_data[['Close']].copy()
         df['MA_200'] = df['Close'].rolling(window=ma_period).mean()
 
-        # Classify regime
-        df['Regime'] = df.apply(
-            lambda row: 'Bull' if row['Close'] > row['MA_200'] else 'Bear',
-            axis=1
-        )
+        # Classify regime using vectorized comparison (more efficient than apply)
+        df['Regime'] = 'Bear'  # Default
+        df.loc[df['Close'] > df['MA_200'], 'Regime'] = 'Bull'
 
         # Add numeric regime code for calculations
-        df['Regime_Code'] = df['Regime'].apply(lambda x: 1 if x == 'Bull' else -1)
+        df['Regime_Code'] = df['Regime'].map({'Bull': 1, 'Bear': -1})
 
         # Drop rows without MA (first 200 days)
         df = df.dropna()
@@ -90,14 +96,15 @@ class RegimeClassifier:
         self._cache_valid = True
 
         # Print summary statistics
-        bull_days = (df['Regime'] == 'Bull').sum()
-        bear_days = (df['Regime'] == 'Bear').sum()
-        total_days = len(df)
+        if not self.quiet:
+            bull_days = (df['Regime'] == 'Bull').sum()
+            bear_days = (df['Regime'] == 'Bear').sum()
+            total_days = len(df)
 
-        print(f"\nRegime Classification Summary:")
-        print(f"  Total Days: {total_days}")
-        print(f"  Bull Market Days: {bull_days} ({bull_days/total_days*100:.1f}%)")
-        print(f"  Bear Market Days: {bear_days} ({bear_days/total_days*100:.1f}%)")
+            print(f"\nRegime Classification Summary:")
+            print(f"  Total Days: {total_days}")
+            print(f"  Bull Market Days: {bull_days} ({bull_days/total_days*100:.1f}%)")
+            print(f"  Bear Market Days: {bear_days} ({bear_days/total_days*100:.1f}%)")
 
         return df
 
