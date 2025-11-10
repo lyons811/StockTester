@@ -22,6 +22,7 @@ A professional-grade stock analysis system based on hedge fund methodologies. An
 ### Key Capabilities
 - **Automatic Veto Rules**: Filters high-risk stocks (liquidity, earnings risk, bankruptcy risk)
 - **Sector-Specific Scoring**: Custom adjustments for 13 sectors (Tech, Financials, Energy, etc.)
+- **S&P 500 Bulk Analysis**: Automatically analyze all 500+ stocks with configurable filtering
 - **Historical Backtesting**: Walk-forward validation framework with 60-day holding periods
 - **Weight Optimization**: Grid search algorithm to find optimal category weights
 - **Confidence Scoring**: Multi-factor confidence adjustment system
@@ -69,6 +70,8 @@ pip install -r requirements.txt
 - `pandas-ta` - Technical analysis indicators
 - `pyyaml` - Configuration file parsing
 - `scipy` - Statistical functions (Phase 4: significance testing)
+- `tqdm` - Progress bars for bulk analysis
+- `lxml` - HTML parsing for S&P 500 list fetching
 
 ## Usage
 
@@ -78,6 +81,30 @@ python main.py AAPL
 python main.py MSFT
 python main.py TSLA
 ```
+
+### Bulk Analyze S&P 500 Stocks ✨ *NEW*
+```bash
+# Analyze all S&P 500, return only STRONG BUY (score >= 6.0)
+python analyze_sp500.py
+
+# Include BUY signals too (score >= 3.0)
+python analyze_sp500.py --min-score 3.0
+
+# Test on first 20 stocks
+python analyze_sp500.py --limit 20
+
+# Custom output file
+python analyze_sp500.py --output my_picks.csv
+```
+Automatically fetches current S&P 500 constituents from Wikipedia and analyzes all ~500 stocks. Returns filtered results with:
+- Console summary (top 20 stocks, sector breakdown)
+- CSV export with ticker, company, sector, score, signal, position size, probabilities
+- Progress bar showing real-time analysis status
+- Sorted by position size (highest conviction first)
+
+**Performance**:
+- First run: 15-30 minutes (fetching data for all stocks)
+- Subsequent runs: 2-5 minutes (cached data, 24-hour TTL)
 
 ### Run Historical Backtest
 ```bash
