@@ -1,0 +1,334 @@
+weights:
+  trend_momentum: 0.26
+  volume: 0.1
+  fundamental: 0.22
+  market_context: 0.21
+  advanced: 0.2
+technical:
+  ma:
+    short_period: 50
+    long_period: 200
+  momentum:
+    lookback_days: 252
+    skip_recent_days: 21
+  rsi:
+    period: 14
+    standard_overbought: 70
+    standard_oversold: 30
+    volatile_overbought: 80
+    volatile_oversold: 20
+    high_beta_threshold: 1.5
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+volume:
+  recent_period: 15
+  previous_period: 15
+  accumulation_threshold_min: 0.1
+  accumulation_threshold_max: 0.2
+  distribution_threshold: 0.3
+  price_volume_period: 20
+fundamental:
+  pe:
+    value: 15
+    fair: 25
+    speculative: 50
+  peg:
+    attractive: 1.0
+    fair: 2.0
+  roe:
+    quality_threshold: 15.0
+  debt_equity:
+    healthy_threshold: 1.0
+    veto_threshold: 3.0
+  cash_flow_quality:
+    quality_threshold: 1.0
+    veto_threshold: 0.5
+market:
+  vix:
+    extreme_fear: 30
+    moderate_fear: 20
+    normal_low: 12
+  sector_relative:
+    outperform_threshold: 5.0
+    underperform_threshold: -5.0
+    lookback_days: 60
+  regime:
+    ma_period: 200
+
+# Phase 5a: Quick Wins - Advanced Momentum and Risk Filters
+phase5a:
+  relative_strength:
+    lookback_days: 126  # 6 months (126 trading days)
+    top_tier_threshold: 80  # Top 20% percentile
+    bottom_tier_threshold: 20  # Bottom 20% percentile
+
+  revenue_acceleration:
+    quarters_lookback: 4  # Analyze last 4 quarters
+
+  earnings_timing:
+    blackout_days: 7  # High-risk window before earnings
+    warning_days: 14  # Caution window before earnings
+    post_earnings_window: 5  # Opportunity window after earnings
+
+  breakout_52week:
+    near_high_threshold: 0.02  # Within 2% of 52-week high
+    volume_confirmation_multiplier: 1.5  # 50% above avg volume
+score_ranges:
+  trend_max: 10.0  # Phase 5a: Was 6.0, added 52-week breakout (-2 to +2)
+  volume_max: 3.0  # No change
+  fundamental_max: 8.0  # Phase 5a: Was 5.0, added revenue acceleration (-2 to +2)
+  market_max: 7.0  # Phase 5a: Was 4.0, added earnings timing (-2 to +1)
+  advanced_max: 13.0  # Phase 5a: Was 10.0, added relative strength (-1 to +2)
+signals:
+  strong_buy: 3.5  # Phase 5a: Adjusted to realistic threshold based on NVDA testing
+  buy: 2.5  # Phase 5a: Adjusted proportionally
+  neutral_high: 2.5
+  neutral_low: -2.5
+  sell: -3.5  # Phase 5a: Symmetric with strong_buy
+position_sizing:
+  score_7_plus: 5.0  # Exceptional (rarely reached)
+  score_5_plus: 4.0  # Phase 5a: Strong conviction (was 3.0)
+  score_3_plus: 2.5  # Phase 5a: Good setup (was 1.5)
+  score_below_3: 0.5  # Minimal position
+  max_position: 5.0
+  high_beta_threshold: 1.5
+  high_beta_multiplier: 0.7
+  low_beta_threshold: 0.7
+  low_beta_multiplier: 1.3
+  bear_market_multiplier: 0.8
+  bull_market_multiplier: 1.1
+vetoes:
+  min_avg_volume: 500000
+  min_market_cap: 300000000
+  earnings_days_before: 7
+  max_decline_60d: 0.5
+  min_negative_earnings_quarters: 4
+  max_debt_equity: 3.0
+  min_cash_flow_quality_quarters: 3
+confidence:
+  strong_agreement_threshold: 3
+  strong_agreement_multiplier: 1.3
+  major_conflict_multiplier: 0.7
+  high_vix_threshold: 40
+  high_vix_multiplier: 0.8
+  trend_fundamental_conflict_threshold_trend: 30
+  trend_fundamental_conflict_threshold_fundamental: -20
+  trend_fundamental_conflict_multiplier: 0.75
+sector_etfs:
+  Technology: XLK
+  Financials: XLF
+  Finance: XLF
+  Financial Services: XLF
+  Energy: XLE
+  Healthcare: XLV
+  Health Care: XLV
+  Industrials: XLI
+  Consumer Discretionary: XLY
+  Consumer Cyclical: XLY
+  Utilities: XLU
+  Utility: XLU
+  Materials: XLB
+  Basic Materials: XLB
+  Real Estate: XLRE
+  Communication Services: XLC
+  Communication: XLC
+  Telecommunication Services: XLC
+  Consumer Staples: XLP
+  Consumer Defensive: XLP
+  default: SPY
+cache:
+  enabled: true
+  cache_dir: cache
+  cache_duration_hours: 24
+  price_cache_duration_hours: 1
+indices:
+  sp500: ^GSPC
+  vix: ^VIX
+advanced_features:
+  earnings_quality:
+    consecutive_beat_threshold: 3
+    consecutive_miss_threshold: 3
+    strong_yoy_growth_threshold: 15.0
+    weak_yoy_growth_threshold: -10.0
+  analyst_revisions:
+    lookback_days: 30
+    significant_upgrade_threshold: 3
+    significant_downgrade_threshold: 3
+  short_interest:
+    enabled: true
+    high_threshold: 20.0
+    moderate_threshold: 10.0
+    low_threshold: 2.0
+    days_to_cover_high: 5.0
+  options_flow:
+    enabled: true
+    unusual_volume_multiplier: 2.0
+    bullish_pc_ratio_threshold: 0.7
+    bearish_pc_ratio_threshold: 1.3
+    neutral_pc_min: 1.0
+    neutral_pc_max: 1.3
+sector_adjustments:
+  Technology:
+    weight_multipliers:
+      trend_momentum: 1.2
+      fundamental: 0.9
+    threshold_overrides:
+      pe_fair: 35
+      pe_expensive: 60
+      peg_attractive: 1.5
+  Financials:
+    weight_multipliers:
+      fundamental: 1.3
+      trend_momentum: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+      debt_equity_healthy: 3.0
+  Financial Services:
+    weight_multipliers:
+      fundamental: 1.3
+      trend_momentum: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+      debt_equity_healthy: 3.0
+  Healthcare:
+    weight_multipliers:
+      fundamental: 1.2
+      market_context: 0.9
+    threshold_overrides:
+      pe_fair: 30
+      roe_quality: 12.0
+  Health Care:
+    weight_multipliers:
+      fundamental: 1.2
+      market_context: 0.9
+    threshold_overrides:
+      pe_fair: 30
+      roe_quality: 12.0
+  Energy:
+    weight_multipliers:
+      market_context: 1.3
+      volume: 1.2
+      fundamental: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 1.5
+  Consumer Cyclical:
+    weight_multipliers:
+      market_context: 1.2
+      trend_momentum: 1.1
+    threshold_overrides:
+      pe_fair: 28
+  Consumer Discretionary:
+    weight_multipliers:
+      market_context: 1.2
+      trend_momentum: 1.1
+    threshold_overrides:
+      pe_fair: 28
+  Consumer Defensive:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.9
+      market_context: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+  Consumer Staples:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.9
+      market_context: 0.9
+    threshold_overrides:
+      roe_quality: 12.0
+  Industrials:
+    weight_multipliers:
+      volume: 1.1
+      market_context: 1.1
+    threshold_overrides:
+      debt_equity_healthy: 1.2
+  Basic Materials:
+    weight_multipliers:
+      market_context: 1.3
+      volume: 1.2
+      fundamental: 0.8
+    threshold_overrides:
+      debt_equity_healthy: 1.3
+  Materials:
+    weight_multipliers:
+      market_context: 1.3
+      volume: 1.2
+      fundamental: 0.8
+    threshold_overrides:
+      debt_equity_healthy: 1.3
+  Real Estate:
+    weight_multipliers:
+      fundamental: 1.3
+      volume: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 2.0
+      cash_flow_quality: 0.9
+  Utilities:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.8
+      market_context: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 2.0
+      pe_fair: 20
+      roe_quality: 10.0
+  Utility:
+    weight_multipliers:
+      fundamental: 1.2
+      trend_momentum: 0.8
+      market_context: 0.9
+    threshold_overrides:
+      debt_equity_healthy: 2.0
+      pe_fair: 20
+      roe_quality: 10.0
+  Communication Services:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+  Communication:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+  Telecommunication Services:
+    weight_multipliers:
+      trend_momentum: 1.1
+      volume: 1.1
+    threshold_overrides:
+      pe_fair: 30
+optimized_weights:
+  bull_market:
+    trend_momentum: 0.25510204081632654
+    volume: 0.10204081632653061
+    fundamental: 0.22448979591836735
+    market_context: 0.21428571428571427
+    advanced: 0.20408163265306123
+  bear_market:
+    trend_momentum: 0.25510204081632654
+    volume: 0.10204081632653061
+    fundamental: 0.22448979591836735
+    market_context: 0.21428571428571427
+    advanced: 0.20408163265306123
+backtesting:
+  default_tickers:
+  - AAPL
+  - MSFT
+  - TSLA
+  - NVDA
+  - JPM
+  - XOM
+  - PFE
+  - WMT
+  lookback_years: 7
+  holding_period_days: 60
+  rebalance_frequency_days: 30
+  start_date: '2018-01-01'
+  end_date: '2025-01-01'
+  risk_free_rate: 0.025
+  use_regime_weights: false
