@@ -369,12 +369,18 @@ def calculate_position_size(final_score: float, beta: float, market_regime: str)
     return min(position_size, position_params['max_position'])
 
 
-def calculate_stock_score(ticker: str) -> StockScore:
+def calculate_stock_score(ticker: str, sp500_returns_cache: Optional[Dict[str, float]] = None, quiet: bool = False) -> StockScore:
     """
-    Calculate complete score for a stock.
+    Calculate complete score for a stock (Phase 5a - OPTIMIZED).
+
+    PERFORMANCE OPTIMIZATION: Accepts pre-fetched S&P 500 returns cache to dramatically
+    improve performance during batch operations (optimization, backtesting).
 
     Args:
         ticker: Stock ticker symbol
+        sp500_returns_cache: Optional pre-fetched S&P 500 6-month returns
+                            If None, will fetch bulk data (adds ~30s first time)
+        quiet: If True, suppress print statements (default: False)
 
     Returns:
         StockScore object with complete analysis
@@ -382,9 +388,14 @@ def calculate_stock_score(ticker: str) -> StockScore:
     result = StockScore()
     result.ticker = ticker.upper()
 
+    # Fetch S&P 500 returns once if not provided (optimization for single stock queries)
+    if sp500_returns_cache is None:
+        sp500_returns_cache = fetcher.get_sp500_returns_bulk(period='6mo')
+
     try:
         # Fetch data
-        print(f"Fetching data for {result.ticker}...")
+        if not quiet:
+            print(f"Fetching data for {result.ticker}...")
         df = fetcher.get_stock_data(result.ticker, period='2y')
         info = fetcher.get_stock_info(result.ticker)
 
@@ -404,7 +415,8 @@ def calculate_stock_score(ticker: str) -> StockScore:
         result.current_price = df['Close'].iloc[-1]
 
         # Check veto rules
-        print("Checking veto rules...")
+        if not quiet:
+            print("Checking veto rules...")
         veto_result = apply_all_veto_rules(result.ticker, info, df)
         if veto_result.is_vetoed:
             result.is_vetoed = True
@@ -412,21 +424,26 @@ def calculate_stock_score(ticker: str) -> StockScore:
             return result
 
         # Calculate indicators
-        print("Calculating technical indicators...")
+        if not quiet:
+            print("Calculating technical indicators...")
         result.technical = calculate_all_technical_indicators(df, result.beta)
 
-        print("Calculating volume indicators...")
+        if not quiet:
+            print("Calculating volume indicators...")
         result.volume = calculate_all_volume_indicators(df)
 
-        print("Calculating fundamental indicators...")
+        if not quiet:
+            print("Calculating fundamental indicators...")
         result.fundamental = calculate_all_fundamental_indicators(info, result.sector, result.ticker)  # Phase 5a: added ticker
 
-        print("Calculating market context...")
+        if not quiet:
+            print("Calculating market context...")
         result.market = calculate_all_market_context_indicators(result.ticker, df)
 
-        # Phase 3: Calculate advanced indicators
-        print("Calculating advanced indicators...")
-        result.advanced = calculate_all_advanced_indicators(result.ticker, config._config or {})
+        # Phase 3 + Phase 5a: Calculate advanced indicators with S&P 500 cache (OPTIMIZED)
+        if not quiet:
+            print("Calculating advanced indicators...")
+        result.advanced = calculate_all_advanced_indicators(result.ticker, config._config or {}, sp500_returns_cache)
 
         # Get normalized scores
         technical_norm = result.technical['normalized_score']
@@ -465,7 +482,8 @@ def calculate_stock_score(ticker: str) -> StockScore:
         result.final_score = max(-10, min(10, adjusted_score))
 
         # Generate signal
-        print("Generating signal...")
+        if not quiet:
+            print("Generating signal...")
         signal_data = generate_signal(result.final_score)
         result.signal = signal_data['signal']
         result.probability_higher = signal_data['probability_higher']
@@ -480,11 +498,13 @@ def calculate_stock_score(ticker: str) -> StockScore:
             market_regime
         )
 
-        print("Scoring complete!")
+        if not quiet:
+            print("Scoring complete!")
         return result
 
     except Exception as e:
-        print(f"Error calculating score: {e}")
+        if not quiet:
+            print(f"Error calculating score: {e}")
         result.is_vetoed = True
         result.veto_reasons.append(f"Error: {str(e)}")
         return result

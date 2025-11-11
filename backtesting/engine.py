@@ -54,7 +54,10 @@ class BacktestEngine:
 
     def run_backtest(self, tickers: List[str], rebalance_frequency_days: int = 30, quiet: bool = False) -> List[BacktestTrade]:
         """
-        Run backtest on a list of tickers.
+        Run backtest on a list of tickers (Phase 5a - OPTIMIZED).
+
+        PERFORMANCE OPTIMIZATION: Fetches S&P 500 returns ONCE at start instead of 500+ times
+        per scoring operation. This reduces backtest time from hours to minutes.
 
         Args:
             tickers: List of stock ticker symbols
@@ -74,6 +77,13 @@ class BacktestEngine:
 
         self.trades = []
 
+        # OPTIMIZATION: Fetch S&P 500 returns ONCE for entire backtest
+        if not quiet:
+            print("Fetching S&P 500 bulk data (one-time)...")
+        sp500_returns_cache = fetcher.get_sp500_returns_bulk(period='6mo')
+        if not quiet and sp500_returns_cache:
+            print(f"✓ Cached {len(sp500_returns_cache)} S&P 500 stock returns\n")
+
         # Walk through time period
         current_date = self.start_date
         trade_count = 0
@@ -83,8 +93,8 @@ class BacktestEngine:
                 print(f"Processing date: {current_date.strftime('%Y-%m-%d')}", end='\r')
 
             for ticker in tickers:
-                # Generate score at this point in time
-                trade = self._evaluate_trade(ticker, current_date)
+                # Generate score at this point in time (pass S&P 500 cache)
+                trade = self._evaluate_trade(ticker, current_date, sp500_returns_cache, quiet)
 
                 if trade:
                     self.trades.append(trade)
@@ -97,13 +107,15 @@ class BacktestEngine:
             print(f"\nBacktest complete: {trade_count} trades executed")
         return self.trades
 
-    def _evaluate_trade(self, ticker: str, entry_date: datetime) -> Optional[BacktestTrade]:
+    def _evaluate_trade(self, ticker: str, entry_date: datetime, sp500_returns_cache=None, quiet: bool = True) -> Optional[BacktestTrade]:
         """
-        Evaluate a single trade at a given point in time.
+        Evaluate a single trade at a given point in time (Phase 5a - OPTIMIZED).
 
         Args:
             ticker: Stock ticker symbol
             entry_date: Date to enter the trade
+            sp500_returns_cache: Pre-fetched S&P 500 returns for performance
+            quiet: If True, suppress scoring output (default: True)
 
         Returns:
             BacktestTrade object or None if trade not valid
@@ -155,7 +167,8 @@ class BacktestEngine:
             # Generate score at entry date (this is the key - use only data available then)
             # Note: This will use current data, but in a full implementation,
             # we would cache historical snapshots
-            result = calculate_stock_score(ticker)
+            # OPTIMIZATION: Pass S&P 500 cache and suppress output
+            result = calculate_stock_score(ticker, sp500_returns_cache=sp500_returns_cache, quiet=quiet)
 
             if result is None or result.is_vetoed:
                 return None  # Skip if can't score or vetoed

@@ -8,6 +8,7 @@ overfitting and provide realistic out-of-sample performance estimates.
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from tqdm import tqdm
 
 from .engine import BacktestEngine
 from .optimizer import WeightOptimizer
@@ -163,6 +164,12 @@ class WalkForwardOptimizer:
             backtest_config = config.get('backtesting', {})
             end_date = backtest_config.get('end_date', '2025-01-01')
 
+        # Type narrowing: ensure dates are strings (satisfy type checker)
+        if start_date is None:
+            start_date = '2018-01-01'
+        if end_date is None:
+            end_date = '2025-01-01'
+
         if not quiet:
             print("\n" + "="*80)
             print("WALK-FORWARD OPTIMIZATION (Phase 4)")
@@ -197,13 +204,16 @@ class WalkForwardOptimizer:
         results = []
         all_test_trades = []
 
-        for i, period in enumerate(periods, 1):
+        # Create progress bar for periods
+        period_iterator = tqdm(enumerate(periods, 1), total=len(periods),
+                              desc="Walk-forward periods", disable=quiet, unit="period")
+
+        for i, period in period_iterator:
             if not quiet:
+                period_iterator.set_description(f"Period {i}/{len(periods)} - Optimizing")
                 print(f"\n{'='*80}")
                 print(f"PERIOD {i}/{len(periods)}")
                 print(f"{'='*80}")
-
-                # Optimize on training period
                 print(f"\n[1/2] Optimizing weights on training data ({period.train_start} to {period.train_end})...")
 
             # Temporarily update engine date range for training
@@ -234,6 +244,7 @@ class WalkForwardOptimizer:
 
             if not quiet:
                 # Test on out-of-sample period
+                period_iterator.set_description(f"Period {i}/{len(periods)} - Testing")
                 print(f"\n[2/2] Testing on out-of-sample data ({period.test_start} to {period.test_end})...")
 
             self.engine.start_date = datetime.strptime(period.test_start, "%Y-%m-%d")

@@ -53,25 +53,28 @@ def main():
     print("\n" + "="*100)
     print("STEP 1: WALK-FORWARD OPTIMIZATION")
     print("="*100)
-    print("Running expanding window validation with Sharpe ratio optimization...")
-    print("This step validates the strategy across multiple out-of-sample periods.\n")
+    print("Expanding window validation with Sharpe ratio objective (5-6 periods)")
+    print("Progress bars will show detailed status...\n")
 
     try:
         engine = BacktestEngine(start_date, end_date)
-        wf_optimizer = WalkForwardOptimizer(engine, train_period_years=2, test_period_years=1, quiet=True)
+        wf_optimizer = WalkForwardOptimizer(engine, train_period_years=2, test_period_years=1, quiet=False)
 
+        # Run with progress bars visible (quiet=False shows tqdm progress)
         wf_results = wf_optimizer.run_walk_forward_optimization(
             tickers=tickers,
             objective='sharpe_ratio',
-            quiet=True
+            quiet=False  # Show progress bars
         )
 
-        wf_optimizer.print_period_comparison(wf_results, quiet=True)
+        # Don't print period comparison to reduce clutter
+        # wf_optimizer.print_period_comparison(wf_results, quiet=True)
 
         agg_metrics = wf_results['aggregated_test_metrics']
-        print(f"\n✅ Walk-forward optimization complete!")
+        print(f"\n✅ Step 1 Complete!")
         print(f"   Out-of-sample Sharpe Ratio: {agg_metrics['risk']['sharpe_ratio']:.3f}")
         print(f"   Out-of-sample Win Rate: {agg_metrics['overall']['win_rate_pct']:.1f}%")
+        print(f"   Total Test Trades: {agg_metrics['overall']['total_trades']}")
 
     except Exception as e:
         print(f"\n❌ Walk-forward optimization failed: {str(e)}")
@@ -85,25 +88,25 @@ def main():
     print("\n" + "="*100)
     print("STEP 2: REGIME-SPECIFIC OPTIMIZATION")
     print("="*100)
-    print("Optimizing separate weights for bull and bear markets...")
-    print("This allows the strategy to adapt to changing market conditions.\n")
+    print("Optimizing bull/bear market weights (2 regimes × ~243 combinations)")
+    print("Progress bars will show detailed status...\n")
 
     try:
         # Use 2018-2023 for training, save 2024-2025 for out-of-sample validation
         train_end = '2024-01-01'
 
         engine = BacktestEngine(start_date, train_end)
-        optimizer = WeightOptimizer(engine, quiet=True)
+        optimizer = WeightOptimizer(engine, quiet=False)  # Show progress bars
 
         regime_weights = optimizer.optimize_by_regime_auto(
             tickers=tickers,
             start_date=start_date,
             end_date=train_end,
             objective='sharpe_ratio',
-            quiet=True
+            quiet=False  # Show progress bars
         )
 
-        print(f"\n✅ Regime-specific optimization complete!")
+        print(f"\n✅ Step 2 Complete!")
 
         # Save to config.yaml
         print("\nSaving regime weights to config.yaml...")

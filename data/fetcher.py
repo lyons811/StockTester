@@ -598,7 +598,14 @@ class DataFetcher:
         if self.use_cache:
             cached_data = cache.get(cache_key, max_age_hours=24)
             if cached_data is not None:
-                return pd.DataFrame(cached_data)
+                try:
+                    df = pd.DataFrame.from_dict(cached_data)
+                    # Verify it has the expected columns
+                    if all(col in df.columns for col in ['ticker', 'company', 'sector']):
+                        return df
+                    # If columns are wrong, clear cache and fetch fresh
+                except:
+                    pass  # If cache is corrupted, fetch fresh
 
         try:
             # Fetch from Wikipedia
@@ -612,26 +619,150 @@ class DataFetcher:
 
             # Parse HTML table
             tables = pd.read_html(StringIO(response.text))
-            sp500_table = tables[0]
+
+            # Find the table with S&P 500 stocks (usually has 'Symbol' and 'Security' columns)
+            # Wikipedia sometimes changes table order, so search for the right one
+            sp500_table = None
+            for table in tables:
+                cols = [str(c).lower() for c in table.columns]
+                if ('symbol' in cols or any('symbol' in c for c in cols)) and len(table) > 400:
+                    sp500_table = table
+                    break
+
+            if sp500_table is None:
+                raise ValueError(f"Could not find S&P 500 table. Found {len(tables)} tables.")
+
+            # Debug: Check what columns we actually have
+            actual_columns = sp500_table.columns.tolist()
+
+            # Try to find the right column names (Wikipedia might change format)
+            # Be more specific to avoid duplicate mappings
+            column_mapping = {}
+            for col in actual_columns:
+                col_str = str(col)
+                col_lower = col_str.lower()
+                # Only map if we haven't already mapped this target
+                if 'ticker' not in column_mapping.values() and col_str in ['Symbol', 'Ticker']:
+                    column_mapping[col] = 'ticker'
+                elif 'company' not in column_mapping.values() and col_str in ['Security', 'Company', 'Name']:
+                    column_mapping[col] = 'company'
+                elif 'sector' not in column_mapping.values() and col_str in ['GICS Sector', 'Sector']:
+                    column_mapping[col] = 'sector'
+
+            # If we couldn't find all required columns, raise error with helpful message
+            if len(column_mapping) < 3:
+                raise ValueError(f"Could not map all required columns. Found: {actual_columns}")
 
             # Rename columns for consistency
-            sp500_table = sp500_table.rename(columns={
-                'Symbol': 'ticker',
-                'Security': 'company',
-                'GICS Sector': 'sector'
-            })
+            sp500_table = sp500_table.rename(columns=column_mapping)
 
             # Select relevant columns
             sp500_df = sp500_table[['ticker', 'company', 'sector']].copy()
 
-            # Cache the data
+            # Cache the data (use 'list' orient for better reconstruction)
             if self.use_cache:
-                cache.set(cache_key, cast(Dict[str, Any], sp500_df.to_dict()))
+                cache.set(cache_key, cast(Dict[str, Any], sp500_df.to_dict(orient='list')))
 
             return sp500_df
 
         except Exception as e:
             print(f"Error fetching S&P 500 constituents: {e}")
+            return None
+
+    def get_sp500_returns_bulk(self, period: str = '6mo', lookback_days: int = 120) -> Optional[Dict[str, float]]:
+        """
+        Get 6-month returns for ALL S&P 500 stocks in a single bulk download (Phase 5a optimization).
+
+        This method dramatically improves performance by fetching all 500 stocks at once
+        instead of making 500 individual API calls. Results are cached for 24 hours.
+
+        Args:
+            period: Time period for return calculation (default: '6mo')
+            lookback_days: Minimum days required for valid return calculation (default: 120)
+
+        Returns:
+            Dictionary mapping ticker -> 6-month return percentage
+            Returns None if bulk fetch fails
+        """
+        cache_key = f"sp500_{period}_returns"
+
+        # Check cache (24-hour cache - same as constituents)
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=24)
+            if cached_data is not None:
+                return cached_data
+
+        try:
+            # Get S&P 500 constituent list
+            constituents = self.get_sp500_constituents()
+            if constituents is None or constituents.empty:
+                return None
+
+            tickers = constituents['ticker'].tolist()
+
+            # Bulk download all S&P 500 stocks at once (MASSIVE performance improvement)
+            # This replaces 500 individual API calls with 1 bulk call
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # Suppress yfinance warnings
+                bulk_data = yf.download(
+                    tickers,
+                    period=period,
+                    group_by='ticker',
+                    threads=True,  # Use threading for faster download
+                    progress=False  # Suppress progress bar
+                )
+
+            # Calculate 6-month returns for each stock
+            returns_dict = {}
+
+            # Type check: ensure bulk_data is valid
+            if bulk_data is None or bulk_data.empty:
+                return None
+
+            for ticker in tickers:
+                try:
+                    # Handle multi-ticker vs single-ticker DataFrame structure
+                    if len(tickers) == 1:
+                        ticker_data = bulk_data
+                    else:
+                        ticker_data = bulk_data[ticker] if ticker in bulk_data.columns.get_level_values(0) else None
+
+                    if ticker_data is None or ticker_data.empty:
+                        continue
+
+                    # Get Close prices
+                    if isinstance(ticker_data, pd.DataFrame) and 'Close' in ticker_data.columns:
+                        close_prices = ticker_data['Close'].dropna()
+                    elif isinstance(ticker_data, pd.Series):
+                        close_prices = ticker_data.dropna()
+                    else:
+                        continue
+
+                    # Require minimum data points
+                    if len(close_prices) < lookback_days:
+                        continue
+
+                    # Calculate return
+                    start_price = close_prices.iloc[0]
+                    end_price = close_prices.iloc[-1]
+
+                    if start_price > 0:
+                        return_pct = ((end_price - start_price) / start_price) * 100
+                        returns_dict[ticker] = return_pct
+
+                except Exception:
+                    # Skip individual stocks that fail
+                    continue
+
+            # Cache the results
+            if self.use_cache and returns_dict:
+                cache.set(cache_key, returns_dict)
+
+            return returns_dict
+
+        except Exception as e:
+            print(f"Error in bulk S&P 500 returns fetch: {e}")
             return None
 
 

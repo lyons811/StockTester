@@ -9,6 +9,7 @@ from typing import List, Dict, Tuple, Optional
 from itertools import product
 from datetime import datetime
 import yaml
+from tqdm import tqdm
 
 from .engine import BacktestEngine
 from .metrics import PerformanceMetrics
@@ -68,12 +69,15 @@ class WeightOptimizer:
                 'advanced': [0.10, 0.15, 0.20]
             }
 
+        # Count total combinations for progress bar
+        total_combinations = self._count_combinations(weight_ranges)
+
         if not quiet:
             print("\n" + "="*70)
             print("WEIGHT OPTIMIZATION")
             print("="*70)
             print(f"Objective: {objective}")
-            print(f"Test combinations: {self._count_combinations(weight_ranges)}")
+            print(f"Test combinations: {total_combinations}")
             print("="*70 + "\n")
 
         best_weights = None
@@ -84,7 +88,11 @@ class WeightOptimizer:
         categories = list(weight_ranges.keys())
         weight_values = [weight_ranges[cat] for cat in categories]
 
-        for weights_tuple in product(*weight_values):
+        # Create progress bar iterator
+        weight_combinations = list(product(*weight_values))
+        iterator = tqdm(weight_combinations, desc="Testing weights", disable=quiet, unit="combo")
+
+        for weights_tuple in iterator:
             # Check if weights sum to 1.0 (allow small tolerance)
             if not (0.98 <= sum(weights_tuple) <= 1.02):
                 continue
@@ -95,14 +103,15 @@ class WeightOptimizer:
             combination_num += 1
             weights_dict = dict(zip(categories, weights_tuple))
 
+            # Update progress bar description
             if not quiet:
-                print(f"Testing combination {combination_num}: {self._format_weights(weights_dict)}", end='\r')
+                iterator.set_postfix({"best_score": f"{best_score:.3f}" if best_score > -float('inf') else "N/A"})
 
             # Temporarily update config with these weights
             self._set_weights(weights_dict)
 
-            # Run backtest
-            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=True)  # Always quiet during grid search
+            # Run backtest (always quiet during grid search)
+            trades = self.engine.run_backtest(tickers, rebalance_frequency_days=30, quiet=True)
 
             # Calculate objective score
             if objective == "win_rate":
