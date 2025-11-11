@@ -419,7 +419,7 @@ def calculate_stock_score(ticker: str) -> StockScore:
         result.volume = calculate_all_volume_indicators(df)
 
         print("Calculating fundamental indicators...")
-        result.fundamental = calculate_all_fundamental_indicators(info, result.sector)
+        result.fundamental = calculate_all_fundamental_indicators(info, result.sector, result.ticker)  # Phase 5a: added ticker
 
         print("Calculating market context...")
         result.market = calculate_all_market_context_indicators(result.ticker, df)

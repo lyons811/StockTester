@@ -240,6 +240,85 @@ def calculate_macd(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+def calculate_52week_breakout(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Calculate 52-week high breakout score.
+
+    Professional momentum signal: stocks near/breaking 52-week highs often continue higher.
+
+    Scoring:
+    - +2: Breaking above 52-week high on volume (50%+ above average)
+    - +1: Within 2% of 52-week high
+    - 0: Normal range
+    - -1: More than 20% below 52-week high (weak)
+    - -2: More than 40% below 52-week high (very weak)
+
+    Args:
+        df: DataFrame with price data (needs 252 days for full 52-week period)
+
+    Returns:
+        Dictionary with score and details
+    """
+    # Get Phase 5a config
+    phase5_params = config.get('phase5a', {})
+    near_high_threshold = phase5_params.get('breakout_52week', {}).get('near_high_threshold', 0.02)
+    volume_multiplier = phase5_params.get('breakout_52week', {}).get('volume_confirmation_multiplier', 1.5)
+
+    # Need at least 252 days (1 trading year)
+    if len(df) < 252:
+        return {
+            'score': 0,
+            'signal': 'Insufficient data',
+            '52week_high': None,
+            'current_price': None,
+            'distance_from_high': None
+        }
+
+    # Calculate 52-week high (last 252 days)
+    lookback_df = df.tail(252)
+    week_52_high = lookback_df['High'].max()
+    current_price = df['Close'].iloc[-1]
+
+    # Calculate distance from high
+    distance_from_high = (current_price - week_52_high) / week_52_high
+
+    # Check volume confirmation
+    avg_volume = df['Volume'].tail(20).mean()
+    current_volume = df['Volume'].iloc[-1]
+    volume_confirmed = current_volume > (avg_volume * volume_multiplier)
+
+    # Scoring logic
+    if distance_from_high >= 0 and volume_confirmed:
+        # Breaking above 52-week high on volume
+        score = 2
+        signal = f"Breakout on volume ({current_volume/avg_volume:.1f}x avg)"
+    elif distance_from_high >= -near_high_threshold:
+        # Within 2% of 52-week high
+        score = 1
+        signal = f"Near 52-week high ({abs(distance_from_high)*100:.1f}% below)"
+    elif distance_from_high >= -0.20:
+        # Within 20% of high - normal
+        score = 0
+        signal = f"Normal ({abs(distance_from_high)*100:.1f}% from high)"
+    elif distance_from_high >= -0.40:
+        # 20-40% below high - weak
+        score = -1
+        signal = f"Weak ({abs(distance_from_high)*100:.1f}% from high)"
+    else:
+        # More than 40% below high - very weak
+        score = -2
+        signal = f"Very weak ({abs(distance_from_high)*100:.1f}% from high)"
+
+    return {
+        'score': score,
+        'signal': signal,
+        '52week_high': week_52_high,
+        'current_price': current_price,
+        'distance_from_high': distance_from_high,
+        'volume_confirmed': volume_confirmed
+    }
+
+
 def calculate_all_technical_indicators(df: pd.DataFrame, beta: float = 1.0) -> Dict[str, Any]:
     """
     Calculate all technical indicators.
@@ -255,17 +334,19 @@ def calculate_all_technical_indicators(df: pd.DataFrame, beta: float = 1.0) -> D
     momentum_result = calculate_momentum(df)
     rsi_result = calculate_rsi(df, beta)
     macd_result = calculate_macd(df)
+    breakout_52w_result = calculate_52week_breakout(df)  # Phase 5a
 
     # Calculate total raw score
     raw_score = (
         ma_result['score'] +
         momentum_result['score'] +
         rsi_result['score'] +
-        macd_result['score']
+        macd_result['score'] +
+        breakout_52w_result['score']  # Phase 5a
     )
 
     # Normalize to percentage (-100 to +100)
-    max_score = config.get('score_ranges.trend_max', 6.0)
+    max_score = config.get('score_ranges.trend_max', 10.0)  # Phase 5a: updated from 6.0
     normalized_score = (raw_score / max_score) * 100
 
     return {
@@ -274,5 +355,6 @@ def calculate_all_technical_indicators(df: pd.DataFrame, beta: float = 1.0) -> D
         'ma_position': ma_result,
         'momentum': momentum_result,
         'rsi': rsi_result,
-        'macd': macd_result
+        'macd': macd_result,
+        'breakout_52week': breakout_52w_result  # Phase 5a
     }

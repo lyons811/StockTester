@@ -578,6 +578,62 @@ class DataFetcher:
             print(f"Error fetching options data for {ticker}: {e}")
             return None
 
+    def get_sp500_constituents(self) -> Optional[pd.DataFrame]:
+        """
+        Get S&P 500 constituent list from Wikipedia (Phase 5a).
+
+        Fetches and caches the current S&P 500 ticker list with company names and sectors.
+        Used for relative strength percentile ranking.
+
+        Returns:
+            DataFrame with columns: ticker, company, sector
+            None if fetch fails
+        """
+        import requests
+        from io import StringIO
+
+        cache_key = "sp500_constituents"
+
+        # Check cache (24-hour cache)
+        if self.use_cache:
+            cached_data = cache.get(cache_key, max_age_hours=24)
+            if cached_data is not None:
+                return pd.DataFrame(cached_data)
+
+        try:
+            # Fetch from Wikipedia
+            url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            # Parse HTML table
+            tables = pd.read_html(StringIO(response.text))
+            sp500_table = tables[0]
+
+            # Rename columns for consistency
+            sp500_table = sp500_table.rename(columns={
+                'Symbol': 'ticker',
+                'Security': 'company',
+                'GICS Sector': 'sector'
+            })
+
+            # Select relevant columns
+            sp500_df = sp500_table[['ticker', 'company', 'sector']].copy()
+
+            # Cache the data
+            if self.use_cache:
+                cache.set(cache_key, cast(Dict[str, Any], sp500_df.to_dict()))
+
+            return sp500_df
+
+        except Exception as e:
+            print(f"Error fetching S&P 500 constituents: {e}")
+            return None
+
 
 # Global fetcher instance
 fetcher = DataFetcher()

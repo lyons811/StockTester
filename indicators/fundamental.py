@@ -301,13 +301,146 @@ def calculate_cash_flow_quality_score(info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calculate_all_fundamental_indicators(info: Dict[str, Any], sector: Optional[str] = None) -> Dict[str, Any]:
+def calculate_revenue_acceleration(ticker: str) -> Dict[str, Any]:
     """
-    Calculate all fundamental indicators (Phase 2: with sector-specific thresholds).
+    Calculate revenue growth acceleration score (Phase 5a).
+
+    Analyzes quarterly revenue trends to detect if growth is accelerating.
+    Professional signal: accelerating revenue growth often precedes stock outperformance.
+
+    Scoring:
+    - +2: Revenue growth accelerating (Q-2 < Q-1 < Q0)
+    - +1: Revenue growing consistently
+    - 0: Revenue stable or mixed trends
+    - -1: Revenue growth decelerating
+    - -2: Revenue declining
+
+    Args:
+        ticker: Stock ticker symbol
+
+    Returns:
+        Dictionary with score and details
+    """
+    from data.fetcher import fetcher
+
+    # Get Phase 5a config
+    phase5_params = config.get('phase5a', {})
+    quarters_lookback = phase5_params.get('revenue_acceleration', {}).get('quarters_lookback', 4)
+
+    # get_quarterly_financials returns tuple: (income, balance, cashflow)
+    quarterly_data = fetcher.get_quarterly_financials(ticker)
+
+    if quarterly_data is None or quarterly_data[0] is None:
+        return {
+            'score': 0,
+            'signal': 'No quarterly revenue data available',
+            'revenue_growth_rates': None
+        }
+
+    # Extract income statement (first element of tuple)
+    quarterly_income = quarterly_data[0]
+
+    if quarterly_income.empty:
+        return {
+            'score': 0,
+            'signal': 'No quarterly revenue data available',
+            'revenue_growth_rates': None
+        }
+
+    # Get Total Revenue row (yfinance uses 'Total Revenue' or sometimes 'Revenue')
+    if 'Total Revenue' in quarterly_income.index:
+        revenue_row = quarterly_income.loc['Total Revenue']
+    elif 'Revenue' in quarterly_income.index:
+        revenue_row = quarterly_income.loc['Revenue']
+    else:
+        return {
+            'score': 0,
+            'signal': 'Revenue data not found in financials',
+            'revenue_growth_rates': None
+        }
+
+    # Sort by date (most recent first) and take last N quarters
+    revenue_data = revenue_row.sort_index(ascending=False).head(quarters_lookback)
+
+    if len(revenue_data) < 3:
+        return {
+            'score': 0,
+            'signal': 'Insufficient quarterly data (need 3+ quarters)',
+            'revenue_growth_rates': None
+        }
+
+    # Calculate quarter-over-quarter growth rates
+    # Note: revenue_data is sorted newest to oldest, so we need to reverse for calculation
+    revenue_values = revenue_data.values[::-1]  # Reverse to oldest -> newest
+    growth_rates = []
+
+    for i in range(1, len(revenue_values)):
+        if revenue_values[i-1] != 0:
+            growth_rate = ((revenue_values[i] - revenue_values[i-1]) / abs(revenue_values[i-1])) * 100
+            growth_rates.append(growth_rate)
+
+    if len(growth_rates) < 2:
+        return {
+            'score': 0,
+            'signal': 'Insufficient data for growth comparison',
+            'revenue_growth_rates': growth_rates
+        }
+
+    # Analyze trend
+    # Most recent growth rate
+    latest_growth = growth_rates[-1]
+    previous_growth = growth_rates[-2]
+
+    # Check if all growth rates are positive
+    all_positive = all(g > 0 for g in growth_rates)
+    all_negative = all(g < 0 for g in growth_rates)
+
+    # Check acceleration (each quarter growing faster than previous)
+    is_accelerating = all(growth_rates[i] > growth_rates[i-1] for i in range(1, len(growth_rates)))
+    is_decelerating = all(growth_rates[i] < growth_rates[i-1] for i in range(1, len(growth_rates)))
+
+    # Scoring logic
+    if is_accelerating and all_positive:
+        score = 2
+        signal = f"Accelerating ({', '.join([f'{g:.1f}%' for g in growth_rates[-3:]])})"
+    elif all_positive and latest_growth > previous_growth:
+        score = 2
+        signal = f"Accelerating (latest: {latest_growth:.1f}% vs {previous_growth:.1f}%)"
+    elif all_positive:
+        score = 1
+        signal = f"Growing (avg: {np.mean(growth_rates):.1f}%)"
+    elif latest_growth > 0 and previous_growth > 0:
+        score = 1
+        signal = f"Growing (recent: {latest_growth:.1f}%)"
+    elif is_decelerating and all_positive:
+        score = -1
+        signal = f"Decelerating ({', '.join([f'{g:.1f}%' for g in growth_rates[-3:]])})"
+    elif latest_growth < 0 and previous_growth < 0:
+        score = -2
+        signal = f"Declining ({latest_growth:.1f}%, {previous_growth:.1f}%)"
+    elif all_negative:
+        score = -2
+        signal = f"Declining (avg: {np.mean(growth_rates):.1f}%)"
+    else:
+        score = 0
+        signal = f"Mixed trends (latest: {latest_growth:.1f}%)"
+
+    return {
+        'score': score,
+        'signal': signal,
+        'revenue_growth_rates': growth_rates,
+        'latest_growth': latest_growth
+    }
+
+
+def calculate_all_fundamental_indicators(info: Dict[str, Any], sector: Optional[str] = None, ticker: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Calculate all fundamental indicators (Phase 2: with sector-specific thresholds, Phase 5a: revenue acceleration).
 
     Args:
         info: Stock info dictionary from yfinance
         sector: Stock sector for sector-specific thresholds
+        ticker: Stock ticker symbol (Phase 5a: required for revenue acceleration)
 
     Returns:
         Dictionary with all fundamental scores and details
@@ -318,18 +451,25 @@ def calculate_all_fundamental_indicators(info: Dict[str, Any], sector: Optional[
     debt_result = calculate_debt_equity_score(info)
     cash_flow_result = calculate_cash_flow_quality_score(info)
 
+    # Phase 5a: Revenue acceleration (only if ticker provided)
+    if ticker:
+        revenue_accel_result = calculate_revenue_acceleration(ticker)
+    else:
+        revenue_accel_result = {'score': 0, 'signal': 'Ticker not provided'}
+
     # Calculate total raw score
     raw_score = (
         pe_result['score'] +
         peg_result['score'] +
         roe_result['score'] +
         debt_result['score'] +
-        cash_flow_result['score']
+        cash_flow_result['score'] +
+        revenue_accel_result['score']  # Phase 5a
     )
 
     # Normalize to percentage (-100 to +100)
-    # Note: Fundamental max is 5.0 (asymmetric, rewards quality)
-    max_score = config.get('score_ranges.fundamental_max', 5.0)
+    # Phase 5a: Updated max from 5.0 to 8.0 (added revenue acceleration +2/-2)
+    max_score = config.get('score_ranges.fundamental_max', 8.0)
     normalized_score = (raw_score / max_score) * 100
 
     return {
@@ -339,5 +479,6 @@ def calculate_all_fundamental_indicators(info: Dict[str, Any], sector: Optional[
         'peg': peg_result,
         'roe': roe_result,
         'debt_equity': debt_result,
-        'cash_flow_quality': cash_flow_result
+        'cash_flow_quality': cash_flow_result,
+        'revenue_acceleration': revenue_accel_result  # Phase 5a
     }

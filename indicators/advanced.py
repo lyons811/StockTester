@@ -398,9 +398,125 @@ def calculate_options_flow_score(ticker: str, config: Dict[str, Any]) -> Dict[st
     return result
 
 
+def calculate_relative_strength_rank(ticker: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate relative strength rank vs S&P 500 (Phase 5a).
+
+    Compares 6-month return percentile of stock against all S&P 500 constituents.
+    Professional signal: stocks with strong relative strength tend to continue outperforming.
+
+    Scoring:
+    - +2: Top 20% (top quintile, institutional favorites)
+    - +1: Top 50% (above-median performance)
+    - 0: Bottom 50% (below-median performance)
+    - -1: Bottom 20% (underperforming significantly)
+
+    Args:
+        ticker: Stock ticker symbol
+        config: Configuration dictionary
+
+    Returns:
+        Dictionary with score, percentile rank, and details
+    """
+    from utils.config import config as cfg
+
+    # Get Phase 5a config
+    phase5_params = cfg.get('phase5a', {})
+    lookback_days = phase5_params.get('relative_strength', {}).get('lookback_days', 126)
+    top_tier_threshold = phase5_params.get('relative_strength', {}).get('top_tier_threshold', 80)
+    bottom_tier_threshold = phase5_params.get('relative_strength', {}).get('bottom_tier_threshold', 20)
+
+    result = {
+        'score': 0,
+        'percentile_rank': None,
+        'stock_return': None,
+        'sp500_median_return': None,
+        'explanation': ''
+    }
+
+    try:
+        # Fetch target stock's 6-month return
+        stock_df = fetcher.get_stock_data(ticker, period='6mo')
+
+        if stock_df is None or stock_df.empty or len(stock_df) < lookback_days:
+            result['explanation'] = f'Insufficient data for {ticker}'
+            return result
+
+        # Calculate target stock's 6-month return
+        stock_price_start = stock_df['Close'].iloc[0]
+        stock_price_end = stock_df['Close'].iloc[-1]
+        stock_return = ((stock_price_end - stock_price_start) / stock_price_start) * 100
+        result['stock_return'] = round(stock_return, 2)
+
+        # Get S&P 500 constituents
+        sp500_constituents = fetcher.get_sp500_constituents()
+
+        if sp500_constituents is None or sp500_constituents.empty:
+            result['explanation'] = 'Unable to fetch S&P 500 constituents'
+            return result
+
+        # Calculate 6-month returns for all S&P 500 stocks
+        # Use caching to avoid redundant API calls
+        sp500_returns = []
+
+        for _, row in sp500_constituents.iterrows():
+            sp_ticker = row['ticker']
+
+            try:
+                # Fetch 6-month data for each S&P 500 stock
+                sp_df = fetcher.get_stock_data(sp_ticker, period='6mo')
+
+                if sp_df is not None and not sp_df.empty and len(sp_df) >= lookback_days:
+                    sp_start = sp_df['Close'].iloc[0]
+                    sp_end = sp_df['Close'].iloc[-1]
+                    sp_return = ((sp_end - sp_start) / sp_start) * 100
+                    sp500_returns.append(sp_return)
+            except:
+                # Skip stocks with errors
+                continue
+
+        if len(sp500_returns) < 100:
+            # Not enough data to calculate percentile
+            result['explanation'] = 'Insufficient S&P 500 return data'
+            return result
+
+        # Calculate percentile rank
+        # percentileofscore returns 0-100 where higher = better
+        from scipy import stats
+        percentile_rank = stats.percentileofscore(sp500_returns, stock_return, kind='rank')
+        result['percentile_rank'] = round(percentile_rank, 1)
+        result['sp500_median_return'] = round(pd.Series(sp500_returns).median(), 2)
+
+        # Scoring logic
+        if percentile_rank >= top_tier_threshold:
+            # Top 20%
+            score = 2
+            explanation = f"Top {100 - percentile_rank:.0f}% ({percentile_rank:.0f}th percentile)"
+        elif percentile_rank >= 50:
+            # Top 50%
+            score = 1
+            explanation = f"Above median ({percentile_rank:.0f}th percentile)"
+        elif percentile_rank >= bottom_tier_threshold:
+            # 20-50%
+            score = 0
+            explanation = f"Below median ({percentile_rank:.0f}th percentile)"
+        else:
+            # Bottom 20%
+            score = -1
+            explanation = f"Bottom {percentile_rank:.0f}% (weak relative strength)"
+
+        result['score'] = score
+        result['explanation'] = explanation
+
+    except Exception as e:
+        result['explanation'] = f'Error calculating relative strength: {str(e)[:50]}'
+
+    return result
+
+
 def calculate_all_advanced_indicators(ticker: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calculate all Phase 3 advanced indicators and return combined score.
+    Calculate all advanced indicators (Phase 3 + Phase 5a) and return combined score.
 
     Args:
         ticker: Stock ticker symbol
@@ -414,19 +530,23 @@ def calculate_all_advanced_indicators(ticker: str, config: Dict[str, Any]) -> Di
     analyst = calculate_analyst_revision_score(ticker, config)
     short_interest = calculate_short_interest_score(ticker, config)
     options_flow = calculate_options_flow_score(ticker, config)
+    relative_strength = calculate_relative_strength_rank(ticker, config)  # Phase 5a
 
     # Combine scores
     raw_score = (
         earnings['score'] +
         analyst['score'] +
         short_interest['score'] +
-        options_flow['score']
+        options_flow['score'] +
+        relative_strength['score']  # Phase 5a
     )
 
     # Normalize to -100 to +100 scale
-    # Max possible: +3 +3 +2 +2 = +10
-    # Min possible: -3 -3 -2 -2 = -10
-    max_score = 10.0
+    # Phase 5a: Updated max from 10.0 to 13.0 (added relative strength -1 to +2)
+    # Max possible: +3 +3 +2 +2 +2 = +12 (but we use 13 for safety margin)
+    # Min possible: -3 -3 -2 -2 -1 = -11
+    from utils.config import config as cfg
+    max_score = cfg.get('score_ranges.advanced_max', 13.0)
     normalized_score = (raw_score / max_score) * 100
 
     return {
@@ -434,6 +554,7 @@ def calculate_all_advanced_indicators(ticker: str, config: Dict[str, Any]) -> Di
         'analyst_revisions': analyst,
         'short_interest': short_interest,
         'options_flow': options_flow,
+        'relative_strength': relative_strength,  # Phase 5a
         'raw_score': raw_score,
         'normalized_score': normalized_score,
         'max_score': max_score

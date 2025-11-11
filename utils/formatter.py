@@ -92,11 +92,16 @@ def print_category_breakdown(score: StockScore) -> None:
     tech_pct = (tech['normalized_score'] / 100) * 100
     tech_status = format_score_bar(tech['normalized_score'], 100)
 
-    print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/6 ({tech_pct:+.0f}%) - {tech_status}")
+    print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/10 ({tech_pct:+.0f}%) - {tech_status}")  # Phase 5a: updated max from 6 to 10
     print(f"  • MA Position:       {tech['ma_position']['score']:+2d}  ({tech['ma_position']['signal']})")
     print(f"  • 12-month Momentum: {tech['momentum']['score']:+2d}  ({format_percentage(tech['momentum']['momentum_percent'], 1)} - {tech['momentum']['signal']})")
     print(f"  • RSI (14):          {tech['rsi']['score']:+2d}  ({tech['rsi']['rsi']:.0f} - {tech['rsi']['signal']})")
     print(f"  • MACD:              {tech['macd']['score']:+2d}  ({tech['macd']['signal']})")
+
+    # Phase 5a: 52-week breakout
+    if 'breakout_52week' in tech:
+        breakout = tech['breakout_52week']
+        print(f"  • 52-Week Breakout:  {breakout['score']:+2d}  ({breakout['signal']})")
     print()
 
     # Volume indicators
@@ -114,7 +119,7 @@ def print_category_breakdown(score: StockScore) -> None:
     fund_pct = (fund['normalized_score'] / 100) * 100
     fund_status = format_score_bar(fund['normalized_score'], 100)
 
-    print(f"[FUNDAMENTALS]: {fund['raw_score']:+.1f}/5 ({fund_pct:+.0f}%) - {fund_status}")
+    print(f"[FUNDAMENTALS]: {fund['raw_score']:+.1f}/8 ({fund_pct:+.0f}%) - {fund_status}")  # Phase 5a: updated max from 5 to 8
 
     # P/E
     pe_val = fund['pe']['pe_ratio']
@@ -140,6 +145,11 @@ def print_category_breakdown(score: StockScore) -> None:
     cf_val = fund['cash_flow_quality']['cash_flow_quality']
     cf_str = f"{cf_val:.2f}" if cf_val is not None else "N/A"
     print(f"  • Cash Flow Quality: {fund['cash_flow_quality']['score']:+2d}  ({cf_str} - {fund['cash_flow_quality']['signal']})")
+
+    # Phase 5a: Revenue Acceleration
+    if 'revenue_acceleration' in fund:
+        revenue = fund['revenue_acceleration']
+        print(f"  • Revenue Growth:    {revenue['score']:+2d}  ({revenue['signal']})")
     print()
 
     # Market context
@@ -147,7 +157,7 @@ def print_category_breakdown(score: StockScore) -> None:
     mkt_pct = (mkt['normalized_score'] / 100) * 100
     mkt_status = format_score_bar(mkt['normalized_score'], 100)
 
-    print(f"[MARKET CONTEXT]: {mkt['raw_score']:+.1f}/4 ({mkt_pct:+.0f}%) - {mkt_status}")
+    print(f"[MARKET CONTEXT]: {mkt['raw_score']:+.1f}/7 ({mkt_pct:+.0f}%) - {mkt_status}")  # Phase 5a: updated max from 4 to 7
 
     # VIX
     vix_val = mkt['vix']['vix_value']
@@ -162,15 +172,20 @@ def print_category_breakdown(score: StockScore) -> None:
     # Market Regime
     regime = mkt['market_regime']['regime']
     print(f"  • Market Regime:     {mkt['market_regime']['score']:+2d}  ({regime} market)")
+
+    # Phase 5a: Earnings Timing
+    if 'earnings_timing' in mkt:
+        earnings_timing = mkt['earnings_timing']
+        print(f"  • Earnings Timing:   {earnings_timing['score']:+2d}  ({earnings_timing['signal']})")
     print()
 
-    # Phase 3: Advanced indicators
+    # Phase 3: Advanced indicators (Phase 5a: updated to include relative strength)
     if score.advanced:
         adv = score.advanced
         adv_pct = (adv['normalized_score'] / 100) * 100
         adv_status = format_score_bar(adv['normalized_score'], 100)
 
-        print(f"[ADVANCED FEATURES - Phase 3]: {adv['raw_score']:+.1f}/10 ({adv_pct:+.0f}%) - {adv_status}")
+        print(f"[ADVANCED FEATURES]: {adv['raw_score']:+.1f}/13 ({adv_pct:+.0f}%) - {adv_status}")  # Phase 5a: updated max from 10 to 13
 
         # Earnings Quality
         earnings = adv.get('earnings_quality', {})
@@ -195,6 +210,11 @@ def print_category_breakdown(score: StockScore) -> None:
         if options:
             options_exp = options.get('explanation', 'N/A')
             print(f"  • Options Flow:      {options.get('score', 0):+2d}  ({options_exp})")
+
+        # Phase 5a: Relative Strength vs S&P 500
+        if 'relative_strength' in adv:
+            rs = adv['relative_strength']
+            print(f"  • Relative Strength: {rs.get('score', 0):+2d}  ({rs.get('explanation', 'N/A')})")
 
         print()
 

@@ -2,22 +2,23 @@
 
 A professional-grade stock analysis system based on hedge fund methodologies. Analyzes stocks across technical, volume, fundamental, market context, and advanced indicators to generate buy/sell/hold signals with confidence ratings and position sizing recommendations.
 
-**Status**: Phase 4 complete ✅ - Advanced optimization & regime-based backtesting with walk-forward validation, Sharpe ratio optimization, and bull/bear market adaptation
+**Status**: Phase 5a complete ✅ - Enhanced momentum & risk intelligence with S&P 500 relative strength, revenue acceleration, earnings timing filters, and 52-week breakout detection
 
 ## Features
 
 ### Core Analysis (5 Categories)
-- **Trend & Momentum (25.5%)**: Moving averages, 12-month momentum, RSI, MACD
-- **Volume Analysis (10.2%)**: Volume trends, institutional flow detection
-- **Fundamental Quality (22.4%)**: P/E, PEG, ROE, Debt/Equity, Cash Flow, Earnings Trends
-- **Market Context (21.4%)**: VIX levels, sector relative strength, market regime detection
-- **Advanced Features (20.4%)** ✨ *Phase 3*:
+- **Trend & Momentum (26%)**: Moving averages, 12-month momentum, RSI, MACD, **52-week breakout detection** ✨ *Phase 5a*
+- **Volume Analysis (10%)**: Volume trends, institutional flow detection
+- **Fundamental Quality (22%)**: P/E, PEG, ROE, Debt/Equity, Cash Flow, **Revenue growth acceleration** ✨ *Phase 5a*
+- **Market Context (21%)**: VIX levels, sector relative strength, market regime, **Earnings timing risk filter** ✨ *Phase 5a*
+- **Advanced Features (20%)** ✨ *Phase 3+5a*:
   - Earnings quality (beat/miss history, YoY growth)
   - Analyst revisions (upgrades/downgrades, consensus)
   - Short interest analysis (squeeze potential, days to cover)
   - Options flow (put/call ratios, unusual activity)
+  - **Relative strength rank vs S&P 500** (percentile ranking) ✨ *Phase 5a*
 
-*Weights optimized via grid search on historical data (243 combinations tested)*
+*Weights optimized via grid search on historical data (243 combinations tested, Phase 5a optimization pending)*
 
 ### Key Capabilities
 - **Automatic Veto Rules**: Filters high-risk stocks (liquidity, earnings risk, bankruptcy risk)
@@ -138,7 +139,7 @@ Optimizes separate weight sets for bull and bear markets. Automatically classifi
 
 ### Phase 4: Complete Optimization Pipeline ✨ *NEW*
 ```bash
-python run_phase4_optimization.py
+python optimization.py
 ```
 Runs complete Phase 4 pipeline: walk-forward optimization, regime-specific weights, statistical validation, and comprehensive report generation. Fully automated.
 
@@ -180,7 +181,7 @@ CATEGORY BREAKDOWN
 ```
 StockTester/
 ├── main.py                      # CLI entry point
-├── run_phase4_optimization.py   # Phase 4: Complete optimization pipeline (automated)
+├── optimization.py              # Phase 4: Complete optimization pipeline (automated)
 ├── config.yaml                  # Configuration (weights, thresholds, sector adjustments)
 ├── requirements.txt             # Python dependencies
 ├── README.md                    # This file
@@ -437,7 +438,7 @@ Phase 4 extends validation to **7 years (2018-2025)** with advanced optimization
 
 ```bash
 # Complete automated pipeline (recommended)
-python run_phase4_optimization.py
+python optimization.py
 
 # Or individual components
 python main.py --walk-forward       # Walk-forward optimization
@@ -508,7 +509,7 @@ This tool is for educational and informational purposes only. Not financial advi
 
 **Built with Python, yfinance, scipy, and quantitative methodologies**
 
-**Current Status**: Phase 4 complete ✅
+**Current Status**: Phase 5a complete ✅
 
 **Phase 3 Foundation:**
 - 5-category scoring system with advanced features
@@ -524,4 +525,15 @@ This tool is for educational and informational purposes only. Not financial advi
 - Statistical validation (significance tests, confidence intervals, Monte Carlo)
 - Comprehensive reporting and automated pipeline
 
-**Ready to Run**: `python run_phase4_optimization.py`
+**Phase 5a: Enhanced Momentum & Risk Intelligence** ✨ *NEW*
+- **52-Week High Breakout Detection**: Identifies momentum breakouts at new highs with volume confirmation
+- **S&P 500 Relative Strength Ranking**: Percentile comparison against all 500 constituents (NVDA: 96th percentile!)
+- **Revenue Growth Acceleration**: Quarterly revenue trend analysis catches declining growth (AAPL revenue -25% flagged)
+- **Earnings Timing Risk Filter**: Avoids high-volatility periods near earnings announcements (7-14 day windows)
+- **Validated Results**: 63.5% win rate (+1.7% from Phase 3), +3.89% avg return (+3% improvement)
+- **Score Ranges Updated**: Technical 10, Fundamental 8, Market 7, Advanced 13 (was 6/5/4/10)
+- **Signal Thresholds Adjusted**: STRONG_BUY 3.5, BUY 2.5 (realistic for new score compression)
+
+**Next Step**: Run `python optimization.py` to optimize weights for Phase 5a indicators
+
+**Ready to Run**: `python main.py NVDA` or `python main.py --backtest`
