@@ -70,9 +70,29 @@ phase5a:
   breakout_52week:
     near_high_threshold: 0.02
     volume_confirmation_multiplier: 1.5
+phase5b:
+  bollinger_bands:
+    period: 20
+    std_dev: 2.0
+    squeeze_percentile: 20
+  consolidation:
+    atr_period: 14
+    atr_decline_days: 10
+    tight_consolidation_days: 7
+    tight_range_pct: 0.02
+    rally_threshold: 0.20
+  multi_timeframe:
+    daily_ema_period: 50
+    weekly_ema_period: 50
+  support_resistance:
+    lookback_window: 60
+    level_proximity: 0.02
+    volume_confirmation_multiplier: 1.5
+  obv:
+    divergence_lookback: 20
 score_ranges:
-  trend_max: 10.0
-  volume_max: 3.0
+  trend_max: 16.0
+  volume_max: 5.0
   fundamental_max: 8.0
   market_max: 7.0
   advanced_max: 13.0

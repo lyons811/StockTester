@@ -92,7 +92,7 @@ def print_category_breakdown(score: StockScore) -> None:
     tech_pct = (tech['normalized_score'] / 100) * 100
     tech_status = format_score_bar(tech['normalized_score'], 100)
 
-    print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/10 ({tech_pct:+.0f}%) - {tech_status}")  # Phase 5a: updated max from 6 to 10
+    print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/16 ({tech_pct:+.0f}%) - {tech_status}")  # Phase 5b: updated max from 10 to 16
     print(f"  • MA Position:       {tech['ma_position']['score']:+2d}  ({tech['ma_position']['signal']})")
     print(f"  • 12-month Momentum: {tech['momentum']['score']:+2d}  ({format_percentage(tech['momentum']['momentum_percent'], 1)} - {tech['momentum']['signal']})")
     print(f"  • RSI (14):          {tech['rsi']['score']:+2d}  ({tech['rsi']['rsi']:.0f} - {tech['rsi']['signal']})")
@@ -102,6 +102,23 @@ def print_category_breakdown(score: StockScore) -> None:
     if 'breakout_52week' in tech:
         breakout = tech['breakout_52week']
         print(f"  • 52-Week Breakout:  {breakout['score']:+2d}  ({breakout['signal']})")
+
+    # Phase 5b: Advanced Momentum indicators
+    if 'bollinger_bands' in tech:
+        bb = tech['bollinger_bands']
+        print(f"  • Bollinger Bands:   {bb['score']:+2d}  ({bb['signal']})")
+
+    if 'consolidation' in tech:
+        cons = tech['consolidation']
+        print(f"  • Consolidation:     {cons['score']:+2d}  ({cons['signal']})")
+
+    if 'multi_timeframe' in tech:
+        mtf = tech['multi_timeframe']
+        print(f"  • Multi-Timeframe:   {mtf['score']:+2d}  ({mtf['signal']})")
+
+    if 'short_term_sr' in tech:
+        sr = tech['short_term_sr']
+        print(f"  • Support/Resistance:{sr['score']:+2d}  ({sr['signal']})")
     print()
 
     # Volume indicators
@@ -109,9 +126,14 @@ def print_category_breakdown(score: StockScore) -> None:
     vol_pct = (vol['normalized_score'] / 100) * 100
     vol_status = format_score_bar(vol['normalized_score'], 100)
 
-    print(f"[VOLUME & INSTITUTIONS]: {vol['raw_score']:+.1f}/3 ({vol_pct:+.0f}%) - {vol_status}")
+    print(f"[VOLUME & INSTITUTIONS]: {vol['raw_score']:+.1f}/5 ({vol_pct:+.0f}%) - {vol_status}")  # Phase 5b: updated max from 3 to 5
     print(f"  • Volume Trend:      {vol['volume_trend']['score']:+2d}  ({vol['volume_trend']['signal']})")
     print(f"  • Volume-Price:      {vol['volume_price']['score']:+2d}  ({vol['volume_price']['signal']})")
+
+    # Phase 5b: OBV Divergence
+    if 'obv_divergence' in vol:
+        obv = vol['obv_divergence']
+        print(f"  • OBV Divergence:    {obv['score']:+2d}  ({obv['signal']})")
     print()
 
     # Fundamental indicators

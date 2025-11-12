@@ -426,7 +426,7 @@ def calculate_stock_score(ticker: str, sp500_returns_cache: Optional[Dict[str, f
         # Calculate indicators
         if not quiet:
             print("Calculating technical indicators...")
-        result.technical = calculate_all_technical_indicators(df, result.beta)
+        result.technical = calculate_all_technical_indicators(df, result.beta, result.ticker)  # Phase 5b: added ticker
 
         if not quiet:
             print("Calculating volume indicators...")
