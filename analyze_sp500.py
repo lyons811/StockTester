@@ -51,14 +51,36 @@ def fetch_sp500_tickers() -> pd.DataFrame:
 
         # Parse with pandas (wrap in StringIO to avoid FutureWarning)
         tables = pd.read_html(StringIO(response.text))
-        sp500_table = tables[0]
+
+        # Find the table with S&P 500 stocks (Wikipedia changed table order)
+        # Look for table with 'Symbol' column and 500+ rows
+        sp500_table = None
+        for table in tables:
+            cols = [str(c).lower() for c in table.columns]
+            if ('symbol' in cols or any('symbol' in c for c in cols)) and len(table) > 400:
+                sp500_table = table
+                break
+
+        if sp500_table is None:
+            raise ValueError(f"Could not find S&P 500 table. Found {len(tables)} tables.")
+
+        # Smart column detection (Wikipedia might change column names)
+        actual_columns = sp500_table.columns.tolist()
+        column_mapping = {}
+        for col in actual_columns:
+            col_str = str(col)
+            if 'ticker' not in column_mapping.values() and col_str in ['Symbol', 'Ticker']:
+                column_mapping[col] = 'ticker'
+            elif 'company' not in column_mapping.values() and col_str in ['Security', 'Company', 'Name']:
+                column_mapping[col] = 'company'
+            elif 'sector' not in column_mapping.values() and col_str in ['GICS Sector', 'Sector']:
+                column_mapping[col] = 'sector'
+
+        if len(column_mapping) < 3:
+            raise ValueError(f"Could not map required columns. Found: {actual_columns}")
 
         # Rename columns for consistency
-        sp500_table = sp500_table.rename(columns={
-            'Symbol': 'ticker',
-            'Security': 'company',
-            'GICS Sector': 'sector'
-        })
+        sp500_table = sp500_table.rename(columns=column_mapping)
 
         # Select relevant columns
         sp500_list = sp500_table[['ticker', 'company', 'sector']].copy()
@@ -72,18 +94,19 @@ def fetch_sp500_tickers() -> pd.DataFrame:
         sys.exit(1)
 
 
-def analyze_stock(ticker: str) -> Optional[Dict]:
+def analyze_stock(ticker: str, sp500_returns_cache: Optional[Dict[str, float]] = None) -> Optional[Dict]:
     """
-    Analyze a single stock and return results as a dictionary.
+    Analyze a single stock and return results as a dictionary (Phase 5a - OPTIMIZED).
 
     Args:
         ticker: Stock ticker symbol
+        sp500_returns_cache: Pre-fetched S&P 500 returns for performance
 
     Returns:
         Dictionary with analysis results, or None if analysis failed
     """
     try:
-        score_data: StockScore = calculate_stock_score(ticker)
+        score_data: StockScore = calculate_stock_score(ticker, sp500_returns_cache=sp500_returns_cache, quiet=True)
 
         # Extract key metrics
         return {
@@ -129,9 +152,18 @@ def analyze_sp500(min_score: float = 6.0, limit: Optional[int] = None) -> pd.Dat
     errors = []
     strong_buy_count = 0
 
+    # Phase 5a OPTIMIZATION: Fetch S&P 500 returns ONCE for all 500 stocks
+    print("Fetching S&P 500 bulk data (one-time, ~30 seconds)...")
+    from data.fetcher import fetcher
+    sp500_returns_cache = fetcher.get_sp500_returns_bulk(period='6mo')
+    if sp500_returns_cache:
+        print(f"✓ Cached {len(sp500_returns_cache)} S&P 500 stock returns\n")
+    else:
+        print("⚠ Warning: Could not fetch S&P 500 bulk data. Relative strength scoring will be limited.\n")
+
     # Progress bar setup
     print(f"Analyzing {len(sp500_tickers)} stocks (min score: {min_score})...")
-    print("This may take 15-30 minutes on first run (faster with cached data)\n")
+    print("Estimated time: 2-5 minutes (cached) or 15-30 minutes (first run)\n")
 
     # Analyze each stock with progress bar
     for idx, row in tqdm(sp500_tickers.iterrows(),
@@ -142,8 +174,8 @@ def analyze_sp500(min_score: float = 6.0, limit: Optional[int] = None) -> pd.Dat
 
         ticker = row['ticker']
 
-        # Analyze stock
-        result = analyze_stock(ticker)
+        # Analyze stock (pass S&P 500 cache for massive speedup)
+        result = analyze_stock(ticker, sp500_returns_cache=sp500_returns_cache)
 
         if result is None:
             # Log error

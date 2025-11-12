@@ -344,24 +344,18 @@ Implemented highest-impact, lowest-complexity indicators:
 **Actual Impact**: +1.7% win rate improvement (61.8% → 63.5%), +3% average return improvement
 **Status**: Complete, awaiting weight optimization (`python optimization.py`)
 
-### **Phase 5b: Smart Money (2-3 weeks)**
-Add data-intensive but high-value signals:
-1. Insider Buying (SEC filings, requires parsing)
-2. Institutional Ownership Changes (13F filings)
-3. OBV Divergence (simple but effective)
 
-**Expected Impact**: +2-4% win rate improvement
-
-### **Phase 5c: Advanced Momentum (2-3 weeks)**
+### **Phase 5b: Advanced Momentum (2-3 weeks)**
 Add sophisticated technical analysis:
 1. Bollinger Bands + Squeeze
 2. Price Consolidation Detection
 3. Multi-Timeframe Alignment
 4. Support/Resistance Levels
+5. OBV Divergence (simple but effective)
 
 **Expected Impact**: +2-3% win rate improvement
 
-### **Phase 5d: Sector Intelligence (1-2 weeks)**
+### **Phase 5c: Sector Intelligence (1-2 weeks)**
 Optimize per-sector weights and thresholds:
 1. Pharma adjustments (fix PFE)
 2. Tech adjustments (optimize NVDA)
@@ -369,7 +363,7 @@ Optimize per-sector weights and thresholds:
 
 **Expected Impact**: +1-3% win rate improvement for weak sectors
 
-### **Phase 5e: Integration & Optimization (2-3 weeks)**
+### **Phase 5d: Integration & Optimization (2-3 weeks)**
 1. Update `run_optimization.py` with all new indicators
 2. Re-optimize weights on full dataset
 3. Adjust score thresholds for STRONG BUY/SELL

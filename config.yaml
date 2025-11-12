@@ -56,42 +56,37 @@ market:
     lookback_days: 60
   regime:
     ma_period: 200
-
-# Phase 5a: Quick Wins - Advanced Momentum and Risk Filters
 phase5a:
   relative_strength:
-    lookback_days: 126  # 6 months (126 trading days)
-    top_tier_threshold: 80  # Top 20% percentile
-    bottom_tier_threshold: 20  # Bottom 20% percentile
-
+    lookback_days: 126
+    top_tier_threshold: 80
+    bottom_tier_threshold: 20
   revenue_acceleration:
-    quarters_lookback: 4  # Analyze last 4 quarters
-
+    quarters_lookback: 4
   earnings_timing:
-    blackout_days: 7  # High-risk window before earnings
-    warning_days: 14  # Caution window before earnings
-    post_earnings_window: 5  # Opportunity window after earnings
-
+    blackout_days: 7
+    warning_days: 14
+    post_earnings_window: 5
   breakout_52week:
-    near_high_threshold: 0.02  # Within 2% of 52-week high
-    volume_confirmation_multiplier: 1.5  # 50% above avg volume
+    near_high_threshold: 0.02
+    volume_confirmation_multiplier: 1.5
 score_ranges:
-  trend_max: 10.0  # Phase 5a: Was 6.0, added 52-week breakout (-2 to +2)
-  volume_max: 3.0  # No change
-  fundamental_max: 8.0  # Phase 5a: Was 5.0, added revenue acceleration (-2 to +2)
-  market_max: 7.0  # Phase 5a: Was 4.0, added earnings timing (-2 to +1)
-  advanced_max: 13.0  # Phase 5a: Was 10.0, added relative strength (-1 to +2)
+  trend_max: 10.0
+  volume_max: 3.0
+  fundamental_max: 8.0
+  market_max: 7.0
+  advanced_max: 13.0
 signals:
-  strong_buy: 3.5  # Phase 5a: Adjusted to realistic threshold based on NVDA testing
-  buy: 2.5  # Phase 5a: Adjusted proportionally
+  strong_buy: 3.5
+  buy: 2.5
   neutral_high: 2.5
   neutral_low: -2.5
-  sell: -3.5  # Phase 5a: Symmetric with strong_buy
+  sell: -3.5
 position_sizing:
-  score_7_plus: 5.0  # Exceptional (rarely reached)
-  score_5_plus: 4.0  # Phase 5a: Strong conviction (was 3.0)
-  score_3_plus: 2.5  # Phase 5a: Good setup (was 1.5)
-  score_below_3: 0.5  # Minimal position
+  score_7_plus: 5.0
+  score_5_plus: 4.0
+  score_3_plus: 2.5
+  score_below_3: 0.5
   max_position: 5.0
   high_beta_threshold: 1.5
   high_beta_multiplier: 0.7
@@ -331,4 +326,4 @@ backtesting:
   start_date: '2018-01-01'
   end_date: '2025-01-01'
   risk_free_rate: 0.025
-  use_regime_weights: false
+  use_regime_weights: true
