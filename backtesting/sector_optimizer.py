@@ -93,7 +93,7 @@ class SectorOptimizer:
     def optimize_sector(self, sector: str, tickers: List[str],
                        target_win_rate: float = 75.0,
                        test_ranges: Optional[Dict[str, List[float]]] = None,
-                       max_samples: int = 50,
+                       max_samples: int = 40,
                        use_subset: bool = True) -> OptimizationResult:
         """
         Find optimal indicator multipliers for a specific sector using random search.
@@ -103,7 +103,7 @@ class SectorOptimizer:
             tickers: Tickers in this sector
             target_win_rate: Target win rate percentage (default: 75.0)
             test_ranges: Dict of multiplier names to ranges to test
-            max_samples: Maximum number of random configurations to test (default: 50)
+            max_samples: Maximum number of random configurations to test (default: 40)
             use_subset: Use only 3 tickers for faster optimization (default: True)
 
         Returns:
@@ -116,22 +116,22 @@ class SectorOptimizer:
 
         # Use subset of tickers for faster optimization
         if use_subset and len(tickers) > 3:
-            opt_tickers = tickers[:3]  # Use first 3 tickers
+            opt_tickers = tickers[:3]  # Use first 3 tickers for robust optimization
             print(f"Using subset of tickers for optimization: {', '.join(opt_tickers)}")
         else:
             opt_tickers = tickers
             print(f"Using all {len(opt_tickers)} tickers")
 
-        # Create shorter-range engine for faster optimization (last 2 years)
+        # Create shorter-range engine for faster optimization (last 3 years)
         from datetime import datetime, timedelta
         opt_end_date = self.engine.end_date
-        opt_start_date = opt_end_date - timedelta(days=730)  # 2 years back
+        opt_start_date = opt_end_date - timedelta(days=1095)  # 3 years back
         opt_engine = BacktestEngine(
             start_date=opt_start_date.strftime('%Y-%m-%d'),
             end_date=opt_end_date.strftime('%Y-%m-%d'),
             holding_period_days=self.engine.holding_period_days
         )
-        print(f"Optimization period: {opt_start_date.strftime('%Y-%m-%d')} to {opt_end_date.strftime('%Y-%m-%d')} (2 years)")
+        print(f"Optimization period: {opt_start_date.strftime('%Y-%m-%d')} to {opt_end_date.strftime('%Y-%m-%d')} (3 years)")
 
         # Default test ranges if not provided
         if test_ranges is None:
@@ -166,7 +166,7 @@ class SectorOptimizer:
 
         # Generate random configurations
         print(f"Using RANDOM SEARCH: Testing {max_samples} random configurations...")
-        estimated_minutes = max_samples * 40 / 60  # ~40 seconds per config with optimizations
+        estimated_minutes = max_samples * 35 / 60  # ~35 seconds per config (3yr, 3 tickers)
         print(f"(Estimated time: {estimated_minutes:.0f} minutes)")
         print("=" * 80)
 
@@ -217,7 +217,7 @@ class SectorOptimizer:
         print("\n" + "="*80)
         print(f"OPTIMIZATION COMPLETE: {sector}")
         print("="*80)
-        print(f"Optimized on: {len(opt_tickers)} tickers, {opt_start_date.strftime('%Y-%m-%d')} to {opt_end_date.strftime('%Y-%m-%d')}")
+        print(f"Optimized on: {len(opt_tickers)} tickers, {opt_start_date.strftime('%Y-%m-%d')} to {opt_end_date.strftime('%Y-%m-%d')} (3 years)")
         print(f"Baseline Win Rate: {baseline_win_rate:.1f}%")
         print(f"Optimized Win Rate: {best_win_rate:.1f}%")
         print(f"Improvement: {best_win_rate - baseline_win_rate:+.1f} points")
@@ -256,7 +256,7 @@ class SectorOptimizer:
         print("\n" + "="*80)
         print("PHASE 5C: AUTOMATED SECTOR OPTIMIZATION")
         print(f"Target: {target_win_rate}% win rate across ALL sectors")
-        print(f"Methodology: 50 random configs per sector, 3 tickers, 2-year period")
+        print(f"Methodology: 40 random configs per sector, 3 tickers, 3-year period (robust mode)")
         print("="*80)
 
         # Run baseline first
@@ -404,13 +404,13 @@ if __name__ == "__main__":
     # Create engine
     engine = BacktestEngine(start_date, end_date, holding_period_days=60)
 
-    # Define tickers by sector
+    # Define tickers by sector (3 representative stocks per sector for robust optimization)
     tickers_by_sector = {
-        'Technology': ['AAPL', 'MSFT', 'NVDA'],
-        'Healthcare': ['PFE'],
-        'Energy': ['XOM'],
-        'Financial Services': ['JPM'],
-        'Consumer Defensive': ['WMT']
+        'Technology': ['AAPL', 'MSFT', 'NVDA'],           # Tech giants, semiconductors
+        'Healthcare': ['PFE', 'JNJ', 'UNH'],              # Pharma, diversified healthcare, insurance
+        'Energy': ['XOM', 'CVX', 'COP'],                  # Integrated oils, exploration
+        'Financial Services': ['JPM', 'BAC', 'GS'],       # Banking, investment banking
+        'Consumer Defensive': ['WMT', 'PG', 'KO']         # Retail, consumer goods, beverages
     }
 
     # Run optimization

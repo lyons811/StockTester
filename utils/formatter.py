@@ -93,32 +93,32 @@ def print_category_breakdown(score: StockScore) -> None:
     tech_status = format_score_bar(tech['normalized_score'], 100)
 
     print(f"[TREND & MOMENTUM]: {tech['raw_score']:+.1f}/16 ({tech_pct:+.0f}%) - {tech_status}")  # Phase 5b: updated max from 10 to 16
-    print(f"  • MA Position:       {tech['ma_position']['score']:+2d}  ({tech['ma_position']['signal']})")
-    print(f"  • 12-month Momentum: {tech['momentum']['score']:+2d}  ({format_percentage(tech['momentum']['momentum_percent'], 1)} - {tech['momentum']['signal']})")
-    print(f"  • RSI (14):          {tech['rsi']['score']:+2d}  ({tech['rsi']['rsi']:.0f} - {tech['rsi']['signal']})")
-    print(f"  • MACD:              {tech['macd']['score']:+2d}  ({tech['macd']['signal']})")
+    print(f"  • MA Position:       {tech['ma_position']['score']:+2.0f}  ({tech['ma_position']['signal']})")
+    print(f"  • 12-month Momentum: {tech['momentum']['score']:+2.0f}  ({format_percentage(tech['momentum']['momentum_percent'], 1)} - {tech['momentum']['signal']})")
+    print(f"  • RSI (14):          {tech['rsi']['score']:+2.0f}  ({tech['rsi']['rsi']:.0f} - {tech['rsi']['signal']})")
+    print(f"  • MACD:              {tech['macd']['score']:+2.0f}  ({tech['macd']['signal']})")
 
     # Phase 5a: 52-week breakout
     if 'breakout_52week' in tech:
         breakout = tech['breakout_52week']
-        print(f"  • 52-Week Breakout:  {breakout['score']:+2d}  ({breakout['signal']})")
+        print(f"  • 52-Week Breakout:  {breakout['score']:+2.0f}  ({breakout['signal']})")
 
     # Phase 5b: Advanced Momentum indicators
     if 'bollinger_bands' in tech:
         bb = tech['bollinger_bands']
-        print(f"  • Bollinger Bands:   {bb['score']:+2d}  ({bb['signal']})")
+        print(f"  • Bollinger Bands:   {bb['score']:+2.0f}  ({bb['signal']})")
 
     if 'consolidation' in tech:
         cons = tech['consolidation']
-        print(f"  • Consolidation:     {cons['score']:+2d}  ({cons['signal']})")
+        print(f"  • Consolidation:     {cons['score']:+2.0f}  ({cons['signal']})")
 
     if 'multi_timeframe' in tech:
         mtf = tech['multi_timeframe']
-        print(f"  • Multi-Timeframe:   {mtf['score']:+2d}  ({mtf['signal']})")
+        print(f"  • Multi-Timeframe:   {mtf['score']:+2.0f}  ({mtf['signal']})")
 
     if 'short_term_sr' in tech:
         sr = tech['short_term_sr']
-        print(f"  • Support/Resistance:{sr['score']:+2d}  ({sr['signal']})")
+        print(f"  • Support/Resistance:{sr['score']:+2.0f}  ({sr['signal']})")
     print()
 
     # Volume indicators
@@ -127,13 +127,13 @@ def print_category_breakdown(score: StockScore) -> None:
     vol_status = format_score_bar(vol['normalized_score'], 100)
 
     print(f"[VOLUME & INSTITUTIONS]: {vol['raw_score']:+.1f}/5 ({vol_pct:+.0f}%) - {vol_status}")  # Phase 5b: updated max from 3 to 5
-    print(f"  • Volume Trend:      {vol['volume_trend']['score']:+2d}  ({vol['volume_trend']['signal']})")
-    print(f"  • Volume-Price:      {vol['volume_price']['score']:+2d}  ({vol['volume_price']['signal']})")
+    print(f"  • Volume Trend:      {vol['volume_trend']['score']:+2.0f}  ({vol['volume_trend']['signal']})")
+    print(f"  • Volume-Price:      {vol['volume_price']['score']:+2.0f}  ({vol['volume_price']['signal']})")
 
     # Phase 5b: OBV Divergence
     if 'obv_divergence' in vol:
         obv = vol['obv_divergence']
-        print(f"  • OBV Divergence:    {obv['score']:+2d}  ({obv['signal']})")
+        print(f"  • OBV Divergence:    {obv['score']:+2.0f}  ({obv['signal']})")
     print()
 
     # Fundamental indicators
@@ -146,32 +146,32 @@ def print_category_breakdown(score: StockScore) -> None:
     # P/E
     pe_val = fund['pe']['pe_ratio']
     pe_str = f"{pe_val:.1f}" if pe_val is not None else "N/A"
-    print(f"  • P/E Ratio:         {fund['pe']['score']:+2d}  ({pe_str} - {fund['pe']['signal']})")
+    print(f"  • P/E Ratio:         {fund['pe']['score']:+2.0f}  ({pe_str} - {fund['pe']['signal']})")
 
     # PEG
     peg_val = fund['peg']['peg_ratio']
     peg_str = f"{peg_val:.2f}" if peg_val is not None else "N/A"
-    print(f"  • PEG Ratio:         {fund['peg']['score']:+2d}  ({peg_str} - {fund['peg']['signal']})")
+    print(f"  • PEG Ratio:         {fund['peg']['score']:+2.0f}  ({peg_str} - {fund['peg']['signal']})")
 
     # ROE
     roe_val = fund['roe']['roe_percent']
     roe_str = f"{roe_val:.1f}%" if roe_val is not None else "N/A"
-    print(f"  • ROE:               {fund['roe']['score']:+2d}  ({roe_str} - {fund['roe']['signal']})")
+    print(f"  • ROE:               {fund['roe']['score']:+2.0f}  ({roe_str} - {fund['roe']['signal']})")
 
     # Debt/Equity
     debt_val = fund['debt_equity']['debt_to_equity']
     debt_str = f"{debt_val:.2f}" if debt_val is not None else "N/A"
-    print(f"  • Debt/Equity:       {fund['debt_equity']['score']:+2d}  ({debt_str} - {fund['debt_equity']['signal']})")
+    print(f"  • Debt/Equity:       {fund['debt_equity']['score']:+2.0f}  ({debt_str} - {fund['debt_equity']['signal']})")
 
     # Cash Flow
     cf_val = fund['cash_flow_quality']['cash_flow_quality']
     cf_str = f"{cf_val:.2f}" if cf_val is not None else "N/A"
-    print(f"  • Cash Flow Quality: {fund['cash_flow_quality']['score']:+2d}  ({cf_str} - {fund['cash_flow_quality']['signal']})")
+    print(f"  • Cash Flow Quality: {fund['cash_flow_quality']['score']:+2.0f}  ({cf_str} - {fund['cash_flow_quality']['signal']})")
 
     # Phase 5a: Revenue Acceleration
     if 'revenue_acceleration' in fund:
         revenue = fund['revenue_acceleration']
-        print(f"  • Revenue Growth:    {revenue['score']:+2d}  ({revenue['signal']})")
+        print(f"  • Revenue Growth:    {revenue['score']:+2.0f}  ({revenue['signal']})")
     print()
 
     # Market context
@@ -184,21 +184,21 @@ def print_category_breakdown(score: StockScore) -> None:
     # VIX
     vix_val = mkt['vix']['vix_value']
     vix_str = f"{vix_val:.1f}" if vix_val is not None else "N/A"
-    print(f"  • VIX Level:         {mkt['vix']['score']:+2d}  ({vix_str} - {mkt['vix']['signal']})")
+    print(f"  • VIX Level:         {mkt['vix']['score']:+2.0f}  ({vix_str} - {mkt['vix']['signal']})")
 
     # Sector Relative
     sector_val = mkt['sector_relative']['relative_strength']
     sector_str = f"{sector_val:+.1f}%" if sector_val != 0 else "N/A"
-    print(f"  • Sector Relative:   {mkt['sector_relative']['score']:+2d}  ({sector_str} vs {mkt.get('sector_etf', 'SPY')})")
+    print(f"  • Sector Relative:   {mkt['sector_relative']['score']:+2.0f}  ({sector_str} vs {mkt.get('sector_etf', 'SPY')})")
 
     # Market Regime
     regime = mkt['market_regime']['regime']
-    print(f"  • Market Regime:     {mkt['market_regime']['score']:+2d}  ({regime} market)")
+    print(f"  • Market Regime:     {mkt['market_regime']['score']:+2.0f}  ({regime} market)")
 
     # Phase 5a: Earnings Timing
     if 'earnings_timing' in mkt:
         earnings_timing = mkt['earnings_timing']
-        print(f"  • Earnings Timing:   {earnings_timing['score']:+2d}  ({earnings_timing['signal']})")
+        print(f"  • Earnings Timing:   {earnings_timing['score']:+2.0f}  ({earnings_timing['signal']})")
     print()
 
     # Phase 3: Advanced indicators (Phase 5a: updated to include relative strength)
@@ -213,30 +213,30 @@ def print_category_breakdown(score: StockScore) -> None:
         earnings = adv.get('earnings_quality', {})
         if earnings:
             earnings_exp = earnings.get('explanation', 'N/A')
-            print(f"  • Earnings Quality:  {earnings.get('score', 0):+2d}  ({earnings_exp})")
+            print(f"  • Earnings Quality:  {earnings.get('score', 0):+2.0f}  ({earnings_exp})")
 
         # Analyst Revisions
         analyst = adv.get('analyst_revisions', {})
         if analyst:
             analyst_exp = analyst.get('explanation', 'N/A')
-            print(f"  • Analyst Revisions: {analyst.get('score', 0):+2d}  ({analyst_exp})")
+            print(f"  • Analyst Revisions: {analyst.get('score', 0):+2.0f}  ({analyst_exp})")
 
         # Short Interest
         short = adv.get('short_interest', {})
         if short:
             short_exp = short.get('explanation', 'N/A')
-            print(f"  • Short Interest:    {short.get('score', 0):+2d}  ({short_exp})")
+            print(f"  • Short Interest:    {short.get('score', 0):+2.0f}  ({short_exp})")
 
         # Options Flow
         options = adv.get('options_flow', {})
         if options:
             options_exp = options.get('explanation', 'N/A')
-            print(f"  • Options Flow:      {options.get('score', 0):+2d}  ({options_exp})")
+            print(f"  • Options Flow:      {options.get('score', 0):+2.0f}  ({options_exp})")
 
         # Phase 5a: Relative Strength vs S&P 500
         if 'relative_strength' in adv:
             rs = adv['relative_strength']
-            print(f"  • Relative Strength: {rs.get('score', 0):+2d}  ({rs.get('explanation', 'N/A')})")
+            print(f"  • Relative Strength: {rs.get('score', 0):+2.0f}  ({rs.get('explanation', 'N/A')})")
 
         print()
 
