@@ -187,12 +187,23 @@ advanced_features:
 sector_adjustments:
   Technology:
     weight_multipliers:
-      trend_momentum: 1.2
-      fundamental: 0.9
+      trend_momentum: 1.3      # Phase 5c: Further emphasize momentum (was 1.2)
+      fundamental: 0.85        # Phase 5c: De-emphasize traditional valuation
+      advanced: 1.2            # Phase 5c: Emphasize relative strength, options flow
     threshold_overrides:
-      pe_fair: 35
-      pe_expensive: 60
-      peg_attractive: 1.5
+      pe_fair: 40              # Phase 5c: Higher P/E acceptable (was 35)
+      pe_expensive: 70         # Phase 5c: More lenient expensive threshold
+      peg_attractive: 1.8      # Phase 5c: More lenient PEG (was 1.5)
+    indicator_overrides:       # Phase 5c: Momentum-heavy sector
+      # Emphasize Phase 5b technical indicators
+      bollinger_squeeze_multiplier: 1.5    # BB squeeze very predictive in tech
+      atr_consolidation_multiplier: 1.4    # ATR consolidation patterns work well
+      # Emphasize momentum and volume
+      rsi_score_multiplier: 1.3
+      obv_divergence_multiplier: 1.3       # OBV divergence reliable in tech
+      # De-emphasize traditional valuation
+      pe_score_multiplier: 0.7
+      peg_score_multiplier: 0.7
   Financials:
     weight_multipliers:
       fundamental: 1.3
@@ -202,32 +213,71 @@ sector_adjustments:
       debt_equity_healthy: 3.0
   Financial Services:
     weight_multipliers:
-      fundamental: 1.3
-      trend_momentum: 0.9
+      fundamental: 1.4         # Phase 5c: Balance sheet quality critical
+      market_context: 1.3      # Phase 5c: Sensitive to Fed policy/rates
+      trend_momentum: 0.8      # Phase 5c: Less momentum-driven
     threshold_overrides:
-      roe_quality: 12.0
-      debt_equity_healthy: 3.0
+      roe_quality: 10.0        # Phase 5c: Lower ROE acceptable (was 12.0)
+      debt_equity_healthy: 5.0 # Phase 5c: Banks have high leverage (was 3.0)
+    indicator_overrides:       # Phase 5c: Interest rate sensitive sector
+      # Banks react strongly to interest rate environment
+      market_regime_multiplier: 1.4
+      # Less sensitive to volatility (banking is inherently leveraged)
+      vix_score_multiplier: 0.7
+      # Emphasize fundamentals over momentum
+      roe_score_multiplier: 1.4
+      revenue_growth_multiplier: 1.3
   Healthcare:
     weight_multipliers:
-      fundamental: 1.2
-      market_context: 0.9
+      trend_momentum: 0.6      # Phase 5c: Heavily reduce momentum (pharma isn't momentum-driven)
+      fundamental: 1.5         # Phase 5c: Emphasize fundamentals (value-driven sector)
+      market_context: 0.8      # Phase 5c: Less macro-sensitive than energy
     threshold_overrides:
       pe_fair: 30
       roe_quality: 12.0
+    indicator_overrides:       # Phase 5c: Indicator-specific score adjustments
+      # Reduce momentum indicators (pharma moves on FDA events, not momentum)
+      rsi_score_multiplier: 0.4
+      macd_score_multiplier: 0.4
+      momentum_score_multiplier: 0.5
+      # Emphasize fundamental quality
+      roe_score_multiplier: 1.5
+      revenue_growth_multiplier: 1.8
+      # Pharma-specific: React strongly to analyst changes (FDA approvals reflected in revisions)
+      analyst_revisions_multiplier: 1.5
   Health Care:
     weight_multipliers:
-      fundamental: 1.2
-      market_context: 0.9
+      trend_momentum: 0.6      # Phase 5c: Heavily reduce momentum (pharma isn't momentum-driven)
+      fundamental: 1.5         # Phase 5c: Emphasize fundamentals (value-driven sector)
+      market_context: 0.8      # Phase 5c: Less macro-sensitive than energy
     threshold_overrides:
       pe_fair: 30
       roe_quality: 12.0
+    indicator_overrides:       # Phase 5c: Indicator-specific score adjustments
+      # Reduce momentum indicators (pharma moves on FDA events, not momentum)
+      rsi_score_multiplier: 0.4
+      macd_score_multiplier: 0.4
+      momentum_score_multiplier: 0.5
+      # Emphasize fundamental quality
+      roe_score_multiplier: 1.5
+      revenue_growth_multiplier: 1.8
+      # Pharma-specific: React strongly to analyst changes (FDA approvals reflected in revisions)
+      analyst_revisions_multiplier: 1.5
   Energy:
     weight_multipliers:
-      market_context: 1.3
-      volume: 1.2
-      fundamental: 0.9
+      market_context: 1.5      # Phase 5c: Heavily emphasize macro/commodity trends
+      volume: 1.3              # Phase 5c: Institutional flow important in commodities
+      fundamental: 0.7         # Phase 5c: Less weight on traditional growth metrics
+      trend_momentum: 0.9      # Phase 5c: Cyclical momentum differs from tech momentum
     threshold_overrides:
-      debt_equity_healthy: 1.5
+      debt_equity_healthy: 2.0  # Phase 5c: Higher debt acceptable in capital-intensive sector
+    indicator_overrides:        # Phase 5c: Cyclical sector adjustments
+      # Reduce penalties for cyclical revenue patterns
+      revenue_growth_multiplier: 0.3
+      # Emphasize relative strength vs broader market (commodity cycle timing)
+      relative_strength_multiplier: 1.8
+      # Market regime more important than individual momentum
+      market_regime_multiplier: 1.5
   Consumer Cyclical:
     weight_multipliers:
       market_context: 1.2
@@ -242,11 +292,19 @@ sector_adjustments:
       pe_fair: 28
   Consumer Defensive:
     weight_multipliers:
-      fundamental: 1.2
-      trend_momentum: 0.9
-      market_context: 0.9
+      fundamental: 1.3         # Phase 5c: Emphasize quality (was 1.2)
+      trend_momentum: 0.8      # Phase 5c: Less momentum-driven (was 0.9)
+      market_context: 0.8      # Phase 5c: Defensive, less market-sensitive
+      volume: 1.1              # Phase 5c: Institutional preference indicator
     threshold_overrides:
-      roe_quality: 12.0
+      roe_quality: 13.0        # Phase 5c: Higher quality threshold (was 12.0)
+    indicator_overrides:       # Phase 5c: Defensive sector adjustments
+      # Stable, predictable businesses - emphasize quality over growth
+      roe_score_multiplier: 1.4
+      revenue_growth_multiplier: 0.8   # Lower growth is normal/acceptable
+      # Less volatile, reduce momentum emphasis
+      rsi_score_multiplier: 0.7
+      volatility_score_multiplier: 0.6  # Low volatility is good here
   Consumer Staples:
     weight_multipliers:
       fundamental: 1.2

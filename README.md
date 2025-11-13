@@ -2,7 +2,7 @@
 
 A professional-grade stock analysis system based on hedge fund methodologies. Analyzes stocks across technical, volume, fundamental, market context, and advanced indicators to generate buy/sell/hold signals with confidence ratings and position sizing recommendations.
 
-**Status**: Phase 5b complete ✅ - Advanced momentum indicators: Bollinger Band squeeze detection, ATR consolidation patterns, multi-timeframe alignment, support/resistance levels, and OBV divergence analysis
+**Status**: Phase 5c complete ✅ - Sector Intelligence: Automated sector-specific indicator optimization with grid search to achieve 75%+ win rate across all sectors. Healthcare, Energy, Technology, Financial Services, and Consumer sectors now have tailored scoring adjustments.
 
 ## Features
 
@@ -22,7 +22,8 @@ A professional-grade stock analysis system based on hedge fund methodologies. An
 
 ### Key Capabilities
 - **Automatic Veto Rules**: Filters high-risk stocks (liquidity, earnings risk, bankruptcy risk)
-- **Sector-Specific Scoring**: Custom adjustments for 13 sectors (Tech, Financials, Energy, etc.)
+- **Sector-Specific Scoring**: Custom adjustments for 13 sectors (Tech, Financials, Energy, etc.) with **indicator-level overrides** ✨ *Phase 5c*
+- **Automated Sector Optimization**: Grid search tool to find optimal sector multipliers targeting 75%+ win rate ✨ *Phase 5c*
 - **S&P 500 Bulk Analysis**: Automatically analyze all 500+ stocks with configurable filtering
 - **Historical Backtesting**: Walk-forward validation framework with 60-day holding periods
 - **Weight Optimization**: Grid search algorithm to find optimal category weights
@@ -533,7 +534,7 @@ This tool is for educational and informational purposes only. Not financial advi
 - **Validated Results**: 63.5% win rate (+1.7% from Phase 3), +3.89% avg return (+3% improvement)
 - **Score Ranges Updated**: Technical 10, Fundamental 8, Market 7, Advanced 13 (was 6/5/4/10)
 
-**Phase 5b: Advanced Momentum Analysis** ✨ *NEW*
+**Phase 5b: Advanced Momentum Analysis**
 - **Bollinger Band Squeeze Detection**: Catches low-volatility compression before explosive breakouts (+2 points)
 - **ATR Consolidation Patterns**: Identifies "coiling spring" setups with declining volatility near highs (+2 points)
 - **Multi-Timeframe Alignment**: Validates trends across daily and weekly timeframes to reduce whipsaws (+1 point)
@@ -543,6 +544,20 @@ This tool is for educational and informational purposes only. Not financial advi
 - **Score Ranges Expanded**: Technical 16 (was 10), Volume 5 (was 3) - Total system: 49 points (was 41)
 - **Signal Thresholds**: STRONG_BUY 3.5, BUY 2.5 maintained
 
-**Next Step**: Run `python optimization.py` to optimize weights for Phase 5b indicators, then implement Phase 5c (Sector Intelligence)
+**Phase 5c: Sector Intelligence** ✨ *NEW*
+- **Sector Performance Tracking** (`backtesting/engine.py`): Per-sector win rate analysis with `--sector-analysis` flag
+- **Indicator Override System** (`config.yaml`): Sector-specific multipliers for all 15+ indicators (RSI, MACD, ROE, etc.)
+- **Smart Sector Adjustments**:
+  - **Healthcare**: Reduced momentum penalties (0.4x RSI/MACD), emphasized fundamentals (1.5x ROE, 1.8x revenue growth)
+  - **Energy**: Cyclical-aware (0.3x revenue growth, 1.8x relative strength, 1.5x market regime)
+  - **Technology**: Amplified momentum (1.3x RSI, 1.5x Bollinger squeeze), de-emphasized P/E (0.7x)
+  - **Financial Services**: Rate-sensitive (1.4x market regime, 0.7x VIX), fundamental quality (1.4x ROE)
+  - **Consumer Defensive**: Quality focus (1.4x ROE, 0.8x revenue growth, 0.6x volatility)
+- **Automated Sector Optimizer** (`backtesting/sector_optimizer.py`): Grid search tool with progress tracking
+- **Deep Copy Fix** (`scoring/calculator.py`): Fixed indicator override application bug
+- **Baseline Results**: Healthcare 51.2%, Energy 58.1%, Technology 66.3%, Overall 63.5%
+- **Target**: 75%+ win rate across ALL sectors
+
+**Next Step**: Run `python -m backtesting.sector_optimizer` to optimize all sectors, then implement Phase 5d (Full Integration)
 
 **Ready to Run**: `python main.py NVDA` or `python main.py --backtest`

@@ -28,6 +28,7 @@ class BacktestTrade:
     confidence: float
     return_pct: float
     holding_days: int
+    sector: str = "Unknown"  # Phase 5c: Track sector for sector-specific analysis
 
 
 class BacktestEngine:
@@ -52,9 +53,9 @@ class BacktestEngine:
         self.holding_period_days = holding_period_days
         self.trades: List[BacktestTrade] = []
 
-    def run_backtest(self, tickers: List[str], rebalance_frequency_days: int = 30, quiet: bool = False) -> List[BacktestTrade]:
+    def run_backtest(self, tickers: List[str], rebalance_frequency_days: int = 30, quiet: bool = False, sector_analysis: bool = False) -> List[BacktestTrade]:
         """
-        Run backtest on a list of tickers (Phase 5a - OPTIMIZED).
+        Run backtest on a list of tickers (Phase 5c - SECTOR ANALYSIS).
 
         PERFORMANCE OPTIMIZATION: Fetches S&P 500 returns ONCE at start instead of 500+ times
         per scoring operation. This reduces backtest time from hours to minutes.
@@ -63,6 +64,7 @@ class BacktestEngine:
             tickers: List of stock ticker symbols
             rebalance_frequency_days: Days between rebalancing (default 30)
             quiet: If True, suppress intermediate messages (default: False)
+            sector_analysis: If True, generate detailed sector performance breakdown (Phase 5c)
 
         Returns:
             List of BacktestTrade objects
@@ -82,19 +84,26 @@ class BacktestEngine:
             print("Fetching S&P 500 bulk data (one-time)...")
         sp500_returns_cache = fetcher.get_sp500_returns_bulk(period='6mo')
         if not quiet and sp500_returns_cache:
-            print(f"✓ Cached {len(sp500_returns_cache)} S&P 500 stock returns\n")
+            print(f"[OK] Cached {len(sp500_returns_cache)} S&P 500 stock returns\n")
 
         # Walk through time period
         current_date = self.start_date
         trade_count = 0
 
+        # Calculate total iterations for progress bar
+        total_dates = ((self.end_date - self.start_date).days // rebalance_frequency_days) + 1
+        date_count = 0
+
         while current_date <= self.end_date:
+            date_count += 1
             if not quiet:
-                print(f"Processing date: {current_date.strftime('%Y-%m-%d')}", end='\r')
+                progress_pct = (date_count / total_dates) * 100
+                print(f"Progress: [{progress_pct:5.1f}%] Date {date_count}/{total_dates}: {current_date.strftime('%Y-%m-%d')} | Trades: {trade_count}", end='\r')
 
             for ticker in tickers:
                 # Generate score at this point in time (pass S&P 500 cache)
-                trade = self._evaluate_trade(ticker, current_date, sp500_returns_cache, quiet)
+                # ALWAYS use quiet=True to suppress verbose indicator logs (cleaner output)
+                trade = self._evaluate_trade(ticker, current_date, sp500_returns_cache, quiet=True)
 
                 if trade:
                     self.trades.append(trade)
@@ -105,6 +114,11 @@ class BacktestEngine:
 
         if not quiet:
             print(f"\nBacktest complete: {trade_count} trades executed")
+
+        # Phase 5c: Generate sector analysis report if requested
+        if sector_analysis and self.trades:
+            print(self.generate_sector_report())
+
         return self.trades
 
     def _evaluate_trade(self, ticker: str, entry_date: datetime, sp500_returns_cache=None, quiet: bool = True) -> Optional[BacktestTrade]:
@@ -176,6 +190,7 @@ class BacktestEngine:
             score = result.final_score
             confidence = result.confidence
             signal = result.signal
+            sector = result.sector  # Phase 5c: Capture sector
 
             # Create trade record
             trade = BacktestTrade(
@@ -188,7 +203,8 @@ class BacktestEngine:
                 signal=signal,
                 confidence=confidence,
                 return_pct=return_pct,
-                holding_days=holding_days
+                holding_days=holding_days,
+                sector=sector  # Phase 5c: Track sector
             )
 
             return trade
@@ -256,6 +272,89 @@ class BacktestEngine:
 
         return sum(t.return_pct for t in trades) / len(trades)
 
+    def generate_sector_report(self) -> str:
+        """
+        Generate detailed sector-by-sector performance breakdown (Phase 5c).
+
+        Returns:
+            Formatted string report
+        """
+        if not self.trades:
+            return "No trades to analyze"
+
+        # Group trades by sector
+        sector_performance = {}
+        for trade in self.trades:
+            sector = trade.sector if trade.sector else 'Unknown'
+            if sector not in sector_performance:
+                sector_performance[sector] = {
+                    'trades': [],
+                    'wins': 0,
+                    'losses': 0,
+                    'total_return': 0,
+                    'best_return': float('-inf'),
+                    'worst_return': float('inf'),
+                    'tickers': set()
+                }
+
+            sector_performance[sector]['trades'].append(trade)
+            sector_performance[sector]['tickers'].add(trade.ticker)
+            if trade.return_pct > 0:
+                sector_performance[sector]['wins'] += 1
+            else:
+                sector_performance[sector]['losses'] += 1
+            sector_performance[sector]['total_return'] += trade.return_pct
+            sector_performance[sector]['best_return'] = max(sector_performance[sector]['best_return'], trade.return_pct)
+            sector_performance[sector]['worst_return'] = min(sector_performance[sector]['worst_return'], trade.return_pct)
+
+        # Generate report
+        report = []
+        report.append("\n" + "="*80)
+        report.append("PHASE 5C: SECTOR PERFORMANCE BREAKDOWN")
+        report.append("="*80)
+
+        # Sort sectors by number of trades (descending)
+        sorted_sectors = sorted(sector_performance.items(), key=lambda x: len(x[1]['trades']), reverse=True)
+
+        for sector, data in sorted_sectors:
+            trades_count = len(data['trades'])
+            win_rate = (data['wins'] / trades_count * 100) if trades_count > 0 else 0
+            avg_return = (data['total_return'] / trades_count) if trades_count > 0 else 0
+            tickers_str = ', '.join(sorted(data['tickers']))
+
+            report.append(f"\n{sector}:")
+            report.append(f"  Tickers: {tickers_str}")
+            report.append(f"  Trades: {trades_count}")
+            report.append(f"  Win Rate: {win_rate:.1f}%")
+            report.append(f"  Avg Return: {avg_return:+.2f}%")
+            report.append(f"  Best Return: {data['best_return']:+.2f}%")
+            report.append(f"  Worst Return: {data['worst_return']:+.2f}%")
+
+            # Target comparison (Phase 5c goal: 75%+ for all sectors)
+            target_win_rate = 75.0
+            gap = win_rate - target_win_rate
+            if gap >= 0:
+                report.append(f"  Status: [OK] MEETS TARGET (75%+) by {gap:+.1f} points")
+            else:
+                report.append(f"  Status: [!!] BELOW TARGET (75%+) by {gap:.1f} points")
+
+        # Overall statistics
+        report.append("\n" + "="*80)
+        report.append("OVERALL PERFORMANCE:")
+        report.append("="*80)
+        overall_win_rate, overall_wins, overall_losses = self.calculate_win_rate(self.trades)
+        overall_avg_return = self.calculate_average_return(self.trades)
+        report.append(f"Total Trades: {len(self.trades)}")
+        report.append(f"Overall Win Rate: {overall_win_rate:.1f}%")
+        report.append(f"Overall Avg Return: {overall_avg_return:+.2f}%")
+        report.append(f"Wins: {overall_wins} | Losses: {overall_losses}")
+
+        # Count sectors meeting target
+        sectors_meeting_target = sum(1 for sector, data in sorted_sectors if (data['wins'] / len(data['trades']) * 100) >= 75.0)
+        report.append(f"\nSectors Meeting 75%+ Target: {sectors_meeting_target} / {len(sorted_sectors)}")
+
+        return '\n'.join(report)
+
     def export_trades_csv(self, filename: str = "backtest_results.csv"):
         """
         Export trades to CSV file.
@@ -271,6 +370,7 @@ class BacktestEngine:
         df = pd.DataFrame([
             {
                 'Ticker': t.ticker,
+                'Sector': t.sector,  # Phase 5c: Include sector
                 'Entry Date': t.entry_date.strftime('%Y-%m-%d'),
                 'Exit Date': t.exit_date.strftime('%Y-%m-%d'),
                 'Entry Price': t.entry_price,

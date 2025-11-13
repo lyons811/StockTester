@@ -80,9 +80,15 @@ Data Sources:
     )
 
     parser.add_argument(
+        '--sector-analysis',
+        action='store_true',
+        help='Generate sector performance breakdown during backtest (Phase 5c)'
+    )
+
+    parser.add_argument(
         '--version',
         action='version',
-        version='Stock Scoring System v4.0.0 (Phase 4)'
+        version='Stock Scoring System v5.0.0 (Phase 5c)'
     )
 
     # Parse arguments
@@ -95,7 +101,7 @@ Data Sources:
         from utils.config import config
 
         print("\n" + "=" * 70)
-        print("STOCK SCORING SYSTEM - BACKTESTING MODE (PHASE 3)")
+        print("STOCK SCORING SYSTEM - BACKTESTING MODE (PHASE 5c)")
         print("=" * 70)
 
         try:
@@ -106,9 +112,9 @@ Data Sources:
             end_date = backtest_config.get('end_date', '2025-01-01')
             holding_period = backtest_config.get('holding_period_days', 60)
 
-            # Run backtest
+            # Run backtest (Phase 5c: with sector analysis option)
             engine = BacktestEngine(start_date, end_date, holding_period)
-            trades = engine.run_backtest(tickers)
+            trades = engine.run_backtest(tickers, sector_analysis=args.sector_analysis)
 
             # Generate metrics and report
             metrics = PerformanceMetrics(trades)

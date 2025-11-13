@@ -5,6 +5,7 @@ Integrates all indicators and generates final score and signal.
 
 import pandas as pd
 import numpy as np
+import copy
 from typing import Dict, Any, Optional
 
 from utils.config import config
@@ -374,6 +375,160 @@ def calculate_position_size(final_score: float, beta: float, market_regime: str)
     return min(position_size, position_params['max_position'])
 
 
+def apply_indicator_overrides(category_results: Dict[str, Dict[str, Any]], sector: str, quiet: bool = False) -> Dict[str, Dict[str, Any]]:
+    """
+    Apply sector-specific multipliers to individual indicator scores (Phase 5c).
+
+    Args:
+        category_results: Dictionary of category results (technical, fundamental, volume, market, advanced)
+        sector: Stock sector
+        quiet: Suppress logging
+
+    Returns:
+        Updated category_results with adjusted indicator scores
+    """
+    # Get sector-specific indicator overrides
+    sector_adjustments = config.get('sector_adjustments', {}).get(sector, {})
+    indicator_overrides = sector_adjustments.get('indicator_overrides', {})
+
+    if not indicator_overrides:
+        return category_results  # No overrides for this sector
+
+    if not quiet:
+        print(f"[Phase 5c] Applying indicator overrides for {sector} sector")
+
+    # Create a DEEP copy to avoid modifying original (Phase 5c fix)
+    adjusted = copy.deepcopy(category_results)
+
+    # Technical indicators
+    technical = adjusted.get('technical', {})
+    if 'rsi' in technical and 'rsi_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['rsi_score_multiplier']
+        if 'score' in technical['rsi']:
+            technical['rsi']['score'] *= multiplier
+            if not quiet:
+                print(f"  - RSI multiplier: {multiplier}x")
+
+    if 'macd' in technical and 'macd_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['macd_score_multiplier']
+        if 'score' in technical['macd']:
+            technical['macd']['score'] *= multiplier
+            if not quiet:
+                print(f"  - MACD multiplier: {multiplier}x")
+
+    if 'momentum' in technical and 'momentum_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['momentum_score_multiplier']
+        if 'score' in technical['momentum']:
+            technical['momentum']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Momentum multiplier: {multiplier}x")
+
+    if 'bollinger_bands' in technical and 'bollinger_squeeze_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['bollinger_squeeze_multiplier']
+        if 'score' in technical['bollinger_bands']:
+            technical['bollinger_bands']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Bollinger Squeeze multiplier: {multiplier}x")
+
+    if 'atr_consolidation' in technical and 'atr_consolidation_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['atr_consolidation_multiplier']
+        if 'score' in technical['atr_consolidation']:
+            technical['atr_consolidation']['score'] *= multiplier
+            if not quiet:
+                print(f"  - ATR Consolidation multiplier: {multiplier}x")
+
+    # Volume indicators
+    volume = adjusted.get('volume', {})
+    if 'obv_divergence' in volume and 'obv_divergence_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['obv_divergence_multiplier']
+        if 'score' in volume['obv_divergence']:
+            volume['obv_divergence']['score'] *= multiplier
+            if not quiet:
+                print(f"  - OBV Divergence multiplier: {multiplier}x")
+
+    # Fundamental indicators
+    fundamental = adjusted.get('fundamental', {})
+    if 'pe' in fundamental and 'pe_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['pe_score_multiplier']
+        if 'score' in fundamental['pe']:
+            fundamental['pe']['score'] *= multiplier
+            if not quiet:
+                print(f"  - P/E multiplier: {multiplier}x")
+
+    if 'peg' in fundamental and 'peg_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['peg_score_multiplier']
+        if 'score' in fundamental['peg']:
+            fundamental['peg']['score'] *= multiplier
+            if not quiet:
+                print(f"  - PEG multiplier: {multiplier}x")
+
+    if 'roe' in fundamental and 'roe_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['roe_score_multiplier']
+        if 'score' in fundamental['roe']:
+            fundamental['roe']['score'] *= multiplier
+            if not quiet:
+                print(f"  - ROE multiplier: {multiplier}x")
+
+    if 'revenue_growth' in fundamental and 'revenue_growth_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['revenue_growth_multiplier']
+        if 'score' in fundamental['revenue_growth']:
+            fundamental['revenue_growth']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Revenue Growth multiplier: {multiplier}x")
+
+    # Market context indicators
+    market = adjusted.get('market', {})
+    if 'market_regime' in market and 'market_regime_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['market_regime_multiplier']
+        if 'score' in market['market_regime']:
+            market['market_regime']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Market Regime multiplier: {multiplier}x")
+
+    if 'vix' in market and 'vix_score_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['vix_score_multiplier']
+        if 'score' in market['vix']:
+            market['vix']['score'] *= multiplier
+            if not quiet:
+                print(f"  - VIX multiplier: {multiplier}x")
+
+    # Advanced indicators
+    advanced = adjusted.get('advanced', {})
+    if 'relative_strength' in advanced and 'relative_strength_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['relative_strength_multiplier']
+        if 'score' in advanced['relative_strength']:
+            advanced['relative_strength']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Relative Strength multiplier: {multiplier}x")
+
+    if 'analyst_revisions' in advanced and 'analyst_revisions_multiplier' in indicator_overrides:
+        multiplier = indicator_overrides['analyst_revisions_multiplier']
+        if 'score' in advanced['analyst_revisions']:
+            advanced['analyst_revisions']['score'] *= multiplier
+            if not quiet:
+                print(f"  - Analyst Revisions multiplier: {multiplier}x")
+
+    # Recalculate normalized scores after applying multipliers
+    # This ensures the category-level scores reflect the adjusted indicator scores
+    for category_name in ['technical', 'volume', 'fundamental', 'market', 'advanced']:
+        category = adjusted.get(category_name, {})
+        if category and 'score' in category:
+            # Recalculate total score from individual indicators
+            total_score = 0
+            indicator_count = 0
+            for key, value in category.items():
+                if isinstance(value, dict) and 'score' in value and key != 'score':
+                    total_score += value['score']
+                    indicator_count += 1
+
+            if indicator_count > 0:
+                category['score'] = total_score
+                # Normalized score is typically score * 10 for -100 to +100 scale
+                category['normalized_score'] = total_score * 10
+
+    return adjusted
+
+
 def calculate_stock_score(ticker: str, sp500_returns_cache: Optional[Dict[str, float]] = None, quiet: bool = False) -> StockScore:
     """
     Calculate complete score for a stock (Phase 5a - OPTIMIZED).
@@ -450,7 +605,24 @@ def calculate_stock_score(ticker: str, sp500_returns_cache: Optional[Dict[str, f
             print("Calculating advanced indicators...")
         result.advanced = calculate_all_advanced_indicators(result.ticker, config._config or {}, sp500_returns_cache)
 
-        # Get normalized scores
+        # Phase 5c: Apply sector-specific indicator overrides BEFORE extracting normalized scores
+        category_results = {
+            'technical': result.technical,
+            'volume': result.volume,
+            'fundamental': result.fundamental,
+            'market': result.market,
+            'advanced': result.advanced
+        }
+        category_results = apply_indicator_overrides(category_results, result.sector, quiet=quiet)
+
+        # Update results with adjusted scores
+        result.technical = category_results['technical']
+        result.volume = category_results['volume']
+        result.fundamental = category_results['fundamental']
+        result.market = category_results['market']
+        result.advanced = category_results['advanced']
+
+        # Get normalized scores (now reflecting Phase 5c adjustments)
         technical_norm = result.technical['normalized_score']
         volume_norm = result.volume['normalized_score']
         fundamental_norm = result.fundamental['normalized_score']
