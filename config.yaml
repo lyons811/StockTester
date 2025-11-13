@@ -80,7 +80,7 @@ phase5b:
     atr_decline_days: 10
     tight_consolidation_days: 7
     tight_range_pct: 0.02
-    rally_threshold: 0.20
+    rally_threshold: 0.2
   multi_timeframe:
     daily_ema_period: 50
     weekly_ema_period: 50

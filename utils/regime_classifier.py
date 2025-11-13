@@ -5,7 +5,7 @@ Classifies historical periods as Bull or Bear market based on
 S&P 500's position relative to its 200-day moving average.
 """
 
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 import pandas as pd
 import yfinance as yf
@@ -36,7 +36,7 @@ class RegimeClassifier:
         self._cache_valid = False
         self.quiet = quiet
 
-    def fetch_sp500_data(self, start_date: str = None, end_date: str = None):
+    def fetch_sp500_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
         """
         Fetch S&P 500 historical data.
 
@@ -49,10 +49,10 @@ class RegimeClassifier:
 
         if start_date and end_date:
             # Use specific date range
-            self.sp500_data = yf.download("^GSPC", start=start_date, end=end_date, progress=False)
+            self.sp500_data = yf.download("^GSPC", start=start_date, end=end_date, progress=False, auto_adjust=True)
         else:
             # Use lookback period
-            self.sp500_data = yf.download("^GSPC", period=self.lookback_period, progress=False)
+            self.sp500_data = yf.download("^GSPC", period=self.lookback_period, progress=False, auto_adjust=True)
 
         if self.sp500_data.empty:
             raise ValueError("Failed to fetch S&P 500 data")
@@ -77,6 +77,8 @@ class RegimeClassifier:
         """
         if self.sp500_data is None or self.sp500_data.empty:
             self.fetch_sp500_data()
+
+        assert self.sp500_data is not None, "S&P 500 data should be loaded"
 
         # Calculate 200-day MA
         df = self.sp500_data[['Close']].copy()
@@ -121,6 +123,8 @@ class RegimeClassifier:
         if not self._cache_valid or self.regime_df is None:
             self.calculate_regimes()
 
+        assert self.regime_df is not None, "Regime data should be calculated"
+
         # Ensure date is in datetime format
         if isinstance(date, str):
             date = pd.to_datetime(date)
@@ -149,6 +153,8 @@ class RegimeClassifier:
         if not self._cache_valid or self.regime_df is None:
             self.calculate_regimes()
 
+        assert self.regime_df is not None, "Regime data should be calculated"
+
         # Filter to date range
         mask = (self.regime_df.index >= start_date) & (self.regime_df.index <= end_date)
         df = self.regime_df[mask].copy()
@@ -165,7 +171,6 @@ class RegimeClassifier:
                 # Regime changed, close previous period
                 if current_regime is not None:
                     periods.append((current_regime, period_start.strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d')))
-
                 # Start new period
                 current_regime = row['Regime']
                 period_start = date
@@ -212,6 +217,8 @@ class RegimeClassifier:
         """
         if not self._cache_valid or self.regime_df is None:
             self.calculate_regimes()
+
+        assert self.regime_df is not None, "Regime data should be calculated"
 
         # Filter to date range
         mask = (self.regime_df.index >= start_date) & (self.regime_df.index <= end_date)
@@ -266,14 +273,17 @@ class RegimeClassifier:
 
 # Convenience functions for quick access
 
-def get_current_regime() -> str:
+def get_current_regime(quiet: bool = False) -> str:
     """
     Get current market regime (Bull or Bear).
+
+    Args:
+        quiet: If True, suppress output messages
 
     Returns:
         "Bull" or "Bear"
     """
-    classifier = RegimeClassifier(lookback_period="1y")
+    classifier = RegimeClassifier(lookback_period="1y", quiet=quiet)
     classifier.calculate_regimes()
     return classifier.get_regime_for_date(datetime.now())
 

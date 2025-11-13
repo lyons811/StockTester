@@ -250,7 +250,7 @@ def generate_signal(final_score: float) -> Dict[str, Any]:
         }
 
 
-def get_sector_adjusted_weights(sector: str) -> Dict[str, float]:
+def get_sector_adjusted_weights(sector: str, quiet: bool = False) -> Dict[str, float]:
     """
     Get category weights adjusted for regime and sector-specific factors (Phase 4).
 
@@ -273,24 +273,29 @@ def get_sector_adjusted_weights(sector: str) -> Dict[str, float]:
         from utils.regime_classifier import get_current_regime
 
         try:
-            current_regime = get_current_regime()
-            print(f"[Phase 4] Current market regime: {current_regime}")
+            current_regime = get_current_regime(quiet=True)  # Suppress verbose regime output
+            if not quiet:
+                print(f"[Phase 4] Current market regime: {current_regime}")
 
             # Load regime-specific weights from config
             regime_weights = config.get('optimized_weights', {})
 
             if current_regime == 'Bull' and 'bull_market' in regime_weights:
                 weights = regime_weights['bull_market'].copy()
-                print(f"[Phase 4] Using bull market weights")
+                if not quiet:
+                    print(f"[Phase 4] Using bull market weights")
             elif current_regime == 'Bear' and 'bear_market' in regime_weights:
                 weights = regime_weights['bear_market'].copy()
-                print(f"[Phase 4] Using bear market weights")
+                if not quiet:
+                    print(f"[Phase 4] Using bear market weights")
             else:
                 # Fallback to standard weights
-                print(f"[Phase 4] Regime weights not configured, using standard weights")
+                if not quiet:
+                    print(f"[Phase 4] Regime weights not configured, using standard weights")
                 weights = config.get_weights().copy()
         except Exception as e:
-            print(f"[Phase 4] Error detecting regime: {e}, using standard weights")
+            if not quiet:
+                print(f"[Phase 4] Error detecting regime: {e}, using standard weights")
             weights = config.get_weights().copy()
     else:
         # Phase 3: Use standard weights
@@ -453,7 +458,7 @@ def calculate_stock_score(ticker: str, sp500_returns_cache: Optional[Dict[str, f
         advanced_norm = result.advanced['normalized_score']
 
         # Apply category weights (with sector-specific adjustments)
-        weights = get_sector_adjusted_weights(result.sector)
+        weights = get_sector_adjusted_weights(result.sector, quiet=quiet)
         weighted_score = (
             technical_norm * weights['trend_momentum'] +
             volume_norm * weights['volume'] +
