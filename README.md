@@ -1,563 +1,300 @@
-# Stock Scoring System
+# SuperPerform - Minervini SEPA Stock Analyzer
 
-A professional-grade stock analysis system based on hedge fund methodologies. Analyzes stocks across technical, volume, fundamental, market context, and advanced indicators to generate buy/sell/hold signals with confidence ratings and position sizing recommendations.
+A Python implementation of Mark Minervini's **SEPA (Specific Entry Point Analysis)** methodology from the book *"Trade Like a Stock Market Wizard"*. This tool automates the multi-step screening process to identify high-potential stock candidates that meet Minervini's strict criteria for superperformance.
 
-**Status**: Phase 5c complete ✅ - Sector Intelligence: Automated sector-specific indicator optimization with grid search to achieve 75%+ win rate across all sectors. Healthcare, Energy, Technology, Financial Services, and Consumer sectors now have tailored scoring adjustments.
+## What It Does
+
+SuperPerform automates the complete SEPA analysis process:
+
+### Step 1: Relative Strength (RS) Rating
+- Calculates IBD-style relative strength ratings for all stocks
+- Formula: `0.4*(3mo) + 0.2*(6mo) + 0.2*(9mo) + 0.2*(12mo)`
+- Compares stock performance against S&P 500 (SPY)
+- Filters to stocks with RS ≥ 70 (configurable)
+
+### Step 2: Stage 2 Trend Template (8 Criteria)
+Validates all 8 of Minervini's Stage 2 criteria:
+1. Price above both 150-day and 200-day moving averages
+2. 150-day MA above 200-day MA
+3. 200-day MA trending up for 1+ months
+4. 50-day MA above both 150-day and 200-day MAs
+5. Price above 50-day MA
+6. Price at least 30% above 52-week low
+7. Price within 25% of 52-week high
+8. RS Rating ≥ 70
+
+### Step 3: Fundamental Screening (SEPA Step 2)
+Analyzes quarterly financials for growth acceleration:
+- **Earnings Acceleration**: Quarter-over-quarter growth improvement
+- **Revenue Acceleration**: Consistent sales growth acceleration
+- **Margin Expansion**: Net profit margin trending up
+- **Price Volatility**: ATR analysis for trend smoothness
+- **~95% rejection rate** (matches Minervini's description)
+
+### Result: SEPA Qualified Stocks
+Stocks that pass all criteria are ready for manual review (SEPA Step 4), where you analyze:
+- Catalysts (new products, FDA approvals, etc.)
+- Entry points (VCP patterns, pullbacks)
+- Company fundamentals and guidance
+- Sector strength
 
 ## Features
 
-### Core Analysis (5 Categories)
-- **Trend & Momentum (26%)**: Moving averages, 12-month momentum, RSI, MACD, **52-week breakout detection** ✨ *Phase 5a*, **Bollinger Band squeeze**, **ATR consolidation patterns**, **multi-timeframe alignment**, **short-term support/resistance** ✨ *Phase 5b*
-- **Volume Analysis (10%)**: Volume trends, institutional flow detection, **OBV divergence analysis** ✨ *Phase 5b*
-- **Fundamental Quality (22%)**: P/E, PEG, ROE, Debt/Equity, Cash Flow, **Revenue growth acceleration** ✨ *Phase 5a*
-- **Market Context (21%)**: VIX levels, sector relative strength, market regime, **Earnings timing risk filter** ✨ *Phase 5a*
-- **Advanced Features (20%)** ✨ *Phase 3+5a*:
-  - Earnings quality (beat/miss history, YoY growth)
-  - Analyst revisions (upgrades/downgrades, consensus)
-  - Short interest analysis (squeeze potential, days to cover)
-  - Options flow (put/call ratios, unusual activity)
-  - **Relative strength rank vs S&P 500** (percentile ranking) ✨ *Phase 5a*
-
-*Weights optimized via grid search on historical data (243 combinations tested, Phase 5a optimization pending)*
-
-### Key Capabilities
-- **Automatic Veto Rules**: Filters high-risk stocks (liquidity, earnings risk, bankruptcy risk)
-- **Sector-Specific Scoring**: Custom adjustments for 13 sectors (Tech, Financials, Energy, etc.) with **indicator-level overrides** ✨ *Phase 5c*
-- **Automated Sector Optimization**: Grid search tool to find optimal sector multipliers targeting 75%+ win rate ✨ *Phase 5c*
-- **S&P 500 Bulk Analysis**: Automatically analyze all 500+ stocks with configurable filtering
-- **Historical Backtesting**: Walk-forward validation framework with 60-day holding periods
-- **Weight Optimization**: Grid search algorithm to find optimal category weights
-- **Confidence Scoring**: Multi-factor confidence adjustment system
-- **Position Sizing**: Risk-adjusted portfolio allocation recommendations
-- **Smart Caching**: 24-hour cache to respect API rate limits
-
-### Phase 4: Advanced Optimization & Validation ✨ *NEW*
-- **Sharpe Ratio Optimization**: Optimizes for risk-adjusted returns (not just win rate)
-- **Walk-Forward Validation**: Expanding window testing prevents overfitting (5-6 out-of-sample periods)
-- **Regime-Adaptive Weights**: Separate bull/bear market weight sets (200-day MA detection)
-- **Advanced Risk Metrics**: Sharpe ratio, Sortino ratio, Max Drawdown, Calmar ratio
-- **Statistical Validation**: Significance testing, bootstrap confidence intervals, Monte Carlo simulation
-- **Extended Backtesting**: 7-year validation period (2018-2025) vs 3 years in Phase 3
-- **Comprehensive Reporting**: Automated report generation with regime comparisons
+- **Automatic Finviz Scraping**: Fetches stocks from Finviz screener (configurable filters)
+- **24-Hour Caching**: Saves scraped tickers to avoid re-scraping
+- **Comprehensive Analysis**: RS ratings, Stage analysis, and fundamental screening
+- **Multiple CSV Outputs**:
+  - `superperform_TIMESTAMP.csv` - All results with detailed metrics
+  - `sepa_qualified_TIMESTAMP.csv` - Only elite stocks that passed all filters
+- **Configurable Thresholds**: Easily adjust screening parameters
+- **Progress Tracking**: Real-time feedback during analysis
 
 ## Installation
 
-### Prerequisites
-- Python 3.8 or higher
-- pip package manager
+1. **Clone or download** this repository
 
-### Setup
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-1. **Clone or download the repository**
-```bash
-cd C:\VSCode\personal\StockTester
-```
-
-2. **Create and activate virtual environment** (recommended)
-```bash
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Mac/Linux
-```
-
-3. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-### Dependencies
-- `yfinance` - Yahoo Finance API for stock data
-- `pandas` - Data manipulation and analysis
-- `numpy` - Numerical computing
-- `pandas-ta` - Technical analysis indicators
-- `pyyaml` - Configuration file parsing
-- `scipy` - Statistical functions (Phase 4: significance testing)
-- `tqdm` - Progress bars for bulk analysis
-- `lxml` - HTML parsing for S&P 500 list fetching
-
-## Usage
-
-### Analyze Individual Stocks
-```bash
-python main.py AAPL
-python main.py MSFT
-python main.py TSLA
-```
-
-### Bulk Analyze S&P 500 Stocks ✨ *NEW*
-```bash
-# Analyze all S&P 500, return only STRONG BUY (score >= 6.0)
-python analyze_sp500.py
-
-# Include BUY signals too (score >= 3.0)
-python analyze_sp500.py --min-score 3.0
-
-# Test on first 20 stocks
-python analyze_sp500.py --limit 20
-
-# Custom output file
-python analyze_sp500.py --output my_picks.csv
-```
-Automatically fetches current S&P 500 constituents from Wikipedia and analyzes all ~500 stocks. Returns filtered results with:
-- Console summary (top 20 stocks, sector breakdown)
-- CSV export with ticker, company, sector, score, signal, position size, probabilities
-- Progress bar showing real-time analysis status
-- Sorted by position size (highest conviction first)
-
-**Performance**:
-- First run: 15-30 minutes (fetching data for all stocks)
-- Subsequent runs: 2-5 minutes (cached data, 24-hour TTL)
-
-### Run Historical Backtest
-```bash
-python main.py --backtest
-```
-Validates scoring system on default portfolio (AAPL, MSFT, TSLA, NVDA, JPM, XOM, PFE, WMT) from 2022-2025. Shows win rates, returns, and performance by score range/signal/ticker.
-
-### Optimize Category Weights
-```bash
-python main.py --optimize-weights
-```
-Grid search to find optimal category weights. Tests combinations and evaluates on historical data. Exports results to `optimized_weights.yaml`.
-
-**Note**: Optimization takes 10-20 minutes.
-
-### Phase 4: Walk-Forward Optimization ✨ *NEW*
-```bash
-python main.py --walk-forward
-```
-Runs walk-forward optimization with Sharpe ratio objective. Validates strategy across 5-6 expanding window periods (2018-2025) to prevent overfitting. Shows out-of-sample performance for each test period.
-
-**Note**: Takes 30-60 minutes due to multiple optimization rounds.
-
-### Phase 4: Regime-Specific Optimization ✨ *NEW*
-```bash
-python main.py --optimize-regime
-```
-Optimizes separate weight sets for bull and bear markets. Automatically classifies historical periods using S&P 500 vs 200-day MA, then finds optimal weights for each regime. Updates `config.yaml` with regime-specific weights.
-
-**Note**: Takes 20-40 minutes.
-
-### Phase 4: Complete Optimization Pipeline ✨ *NEW*
-```bash
-python optimization.py
-```
-Runs complete Phase 4 pipeline: walk-forward optimization, regime-specific weights, statistical validation, and comprehensive report generation. Fully automated.
-
-**Note**: Takes 30-60 minutes. Generates `phase4_validation_report.md`.
-
-### Sample Output
-```
-================================================================
-STOCK ANALYSIS: AAPL (Apple Inc.)
-DATE: 2025-11-07 10:51
-SECTOR: Technology | MARKET CAP: $3.97T
-================================================================
-
-OVERALL SIGNAL: BUY
-SCORE: +4.4 / 10
-CONFIDENCE: 100%
-RECOMMENDED POSITION: 1.7% of portfolio
-
-PROBABILITY ESTIMATES (1-3 month timeframe):
-  ↗ Higher:   60-70%
-  ↘ Lower:    15-25%
-  → Sideways: 15-20%
-
-================================================================
-CATEGORY BREAKDOWN
-================================================================
-
-✓ TREND & MOMENTUM: +3.0/6 (+50%) - POSITIVE
-  • MA Position:       +2  (Bullish (Golden Cross setup))
-  • 12-month Momentum: +1  (13.6% - Bullish)
-  • RSI (14):          -1  (77 - Overbought)
-  • MACD:              +1  (Bullish crossover)
-
-...
-```
-
-## Project Structure
-
-```
-StockTester/
-├── main.py                      # CLI entry point
-├── optimization.py              # Phase 4: Complete optimization pipeline (automated)
-├── config.yaml                  # Configuration (weights, thresholds, sector adjustments)
-├── requirements.txt             # Python dependencies
-├── README.md                    # This file
-├── stock_scoring_system_spec.md # Detailed methodology specification
-│
-├── data/                        # Data fetching and caching
-│   ├── __init__.py
-│   ├── fetcher.py              # yfinance API wrapper (Phase 3: +short interest, options)
-│   └── cache_manager.py        # File-based caching system
-│
-├── indicators/                  # Indicator calculations
-│   ├── __init__.py
-│   ├── technical.py            # MA, RSI, MACD, momentum
-│   ├── volume.py               # Volume trend and price relationship
-│   ├── fundamental.py          # P/E, PEG, ROE, debt, cash flow (Phase 2: edge cases)
-│   ├── market_context.py       # VIX, sector relative, market regime
-│   └── advanced.py             # Phase 3: Earnings quality, analyst revisions, short interest, options
-│
-├── scoring/                     # Scoring engine
-│   ├── __init__.py
-│   ├── calculator.py           # Main scoring algorithm (Phase 2: sector adjustments)
-│   └── vetoes.py               # Automatic veto rules (Phase 2: 3 new rules)
-│
-├── backtesting/                 # Phase 2-4: Historical validation & optimization
-│   ├── __init__.py
-│   ├── engine.py               # Walk-forward backtesting engine
-│   ├── metrics.py              # Performance metrics (Phase 4: +Sharpe, Sortino, Max DD, Calmar)
-│   ├── optimizer.py            # Grid search optimizer (Phase 4: +Sharpe objective, regime optimization)
-│   ├── walk_forward.py         # Phase 4: Walk-forward optimizer with expanding windows
-│   └── report_generator.py     # Phase 4: Comprehensive validation report generator
-│
-├── utils/                       # Utilities
-│   ├── __init__.py
-│   ├── config.py               # Configuration loader
-│   ├── formatter.py            # Console output formatting
-│   ├── statistics.py           # Phase 4: Statistical validation (t-tests, bootstrap, Monte Carlo)
-│   └── regime_classifier.py    # Phase 4: Bull/bear market regime detection
-│
-└── cache/                       # Cache directory (auto-created)
-    ├── AAPL_price_4y.json
-    ├── AAPL_info.json
-    ├── AAPL_earnings_history.json  # Phase 2
-    ├── AAPL_quarterly_financials.json  # Phase 2
-    ├── AAPL_analyst_data.json  # Phase 2
-    ├── AAPL_short_interest.json  # Phase 3
-    ├── AAPL_options_data.json  # Phase 3
-    └── ...
-```
+3. **Run the analyzer**:
+   ```bash
+   python SuperPerform.py
+   ```
 
 ## Configuration
 
-Edit `config.yaml` to customize:
+Edit the configuration section at the top of `SuperPerform.py`:
 
-### Category Weights (Phase 3 Optimized)
-```yaml
-weights:
-  trend_momentum: 0.255   # Momentum and trend following
-  volume: 0.102           # Institutional flow detection
-  fundamental: 0.224      # Quality and valuation metrics
-  market_context: 0.214   # Regime and sector relative strength
-  advanced: 0.204         # Phase 3: Earnings, analysts, short interest, options
+### Stock Source
+```python
+USE_FINVIZ_SCRAPER = True   # Set False to use hardcoded STOCK_LIST
+MAX_PAGES = 4               # Number of Finviz pages to scrape
+CACHE_HOURS = 24            # Cache duration before re-scraping
 ```
 
-*Note: Weights optimized via 5-category grid search on 3 years of historical data*
-
-### Regime-Specific Weights (Phase 4) ✨ *NEW*
-```yaml
-optimized_weights:
-  bull_market:    # Used when S&P 500 > 200-day MA
-    trend_momentum: 0.30  # Will be optimized
-    volume: 0.10
-    fundamental: 0.20
-    market_context: 0.20
-    advanced: 0.20
-
-  bear_market:    # Used when S&P 500 < 200-day MA
-    trend_momentum: 0.25  # Will be optimized
-    volume: 0.15
-    fundamental: 0.25
-    market_context: 0.20
-    advanced: 0.15
-
-backtesting:
-  use_regime_weights: false  # Enable after running regime optimization
+### Step 1: RS & Stage Thresholds
+```python
+MIN_RS_RATING = 70          # Minimum RS rating (70-99)
+MIN_TRADING_DAYS = 240      # Minimum data required (~9.5 months)
 ```
 
-*Note: Regime weights optimized separately for bull/bear markets. Enable with `use_regime_weights: true` after running `python main.py --optimize-regime`*
-
-### Sector-Specific Adjustments (Phase 2)
-```yaml
-sector_adjustments:
-  Technology:
-    weight_multipliers:
-      trend_momentum: 1.2  # Tech is momentum-driven
-      fundamental: 0.9     # Less emphasis on traditional valuation
-    threshold_overrides:
-      pe_fair: 35          # Higher P/E acceptable for tech
-      peg_attractive: 1.5  # Growth-adjusted valuation more important
-
-  Financials:
-    weight_multipliers:
-      fundamental: 1.3     # Fundamentals critical for banks
-      trend_momentum: 0.9  # Less momentum-driven
-    threshold_overrides:
-      roe_quality: 12.0    # Lower ROE threshold
-      debt_equity_healthy: 3.0  # Banks have higher leverage
-
-  # ... (11 more sectors: Energy, Healthcare, Utilities, Materials, etc.)
+### Step 2: Fundamental Screening
+```python
+ENABLE_STEP2 = True                 # Toggle fundamental screening
+MIN_ACCELERATION_QUARTERS = 2       # Quarters showing acceleration (out of 4)
+MIN_EARNINGS_GROWTH = 15.0          # Minimum YoY earnings growth %
+MIN_SALES_GROWTH = 10.0             # Minimum YoY sales growth %
+MAX_ATR_PERCENT = 6.0               # Maximum volatility (lower = smoother)
 ```
 
-### Technical Parameters
-```yaml
-technical:
-  ma:
-    short_period: 50
-    long_period: 200
-  rsi:
-    period: 14
-    standard_overbought: 70
-    standard_oversold: 30
+### Finviz Screener URL
+To change the Finviz screener criteria:
+1. Go to [Finviz Screener](https://finviz.com/screener.ashx)
+2. Set your filters (current default: 30%+ above 52w low, Price > 200MA, 50MA > 200MA)
+3. Copy the URL
+4. Update line 75 in `SuperPerform.py`:
+   ```python
+   base_url = "https://finviz.com/screener.ashx?v=411&f=YOUR_FILTERS"
+   ```
+
+### Manual Stock List
+If you prefer to analyze a specific list of stocks:
+1. Set `USE_FINVIZ_SCRAPER = False`
+2. Update the `STOCK_LIST` array (lines 19-26):
+   ```python
+   STOCK_LIST = [
+       "AAPL", "MSFT", "GOOGL", ...
+   ]
+   ```
+
+## Output Explained
+
+### Terminal Output
+
+```
+SUPERPERFORM - COMPLETE MINERVINI SEPA ANALYSIS
+====================================================================================================
+
+Configuration:
+  • Analyzing 80 stocks
+  • Stock Source: Finviz Screener
+  • Minimum RS Rating: 70
+  • Step 2 Screening: ENABLED
+
+STEP 1: CALCULATING RELATIVE STRENGTH RATINGS
+  [1/80] Processing AAPL... ✓
+  ...
+  • 14 stocks with RS >= 70
+
+STEP 2: STAGE ANALYSIS FOR HIGH RS STOCKS
+  [1/14] Analyzing AAPL (RS=99)... ✓ STAGE 2
+  ...
+  • 10 stocks meet all 8 Stage 2 criteria
+
+STEP 3: FUNDAMENTAL SCREENING (SEPA STEP 2)
+  [1/10] AAPL... ✓ SEPA QUALIFIED
+  [2/10] MSFT... ✗ (Revenue acceleration (1/2 quarters))
+  ...
+  • 3 stocks pass all SEPA Step 2 criteria
+  • 7 stocks filtered out (~70% rejection rate)
+
+SEPA STEP 2 QUALIFIED STOCKS (Ready for Manual Review)
+  AAPL - RS 99 | $150.00 | 5% from 52w high
+    • Earnings Growth (YoY): 25.3%
+    • Revenue Growth (YoY): 18.2%
+    • Earnings Acceleration: 3/4 quarters
+    • Revenue Acceleration: 2/4 quarters
+    • ATR (Volatility): 2.1%
+    • Net Margin: 24.5%
 ```
 
-### Veto Rules (Phase 1 + Phase 2)
-```yaml
-vetoes:
-  # Phase 1 Rules
-  min_avg_volume: 500000        # Minimum daily volume
-  min_market_cap: 300000000     # $300M minimum
-  earnings_days_before: 7       # Avoid 7 days before earnings
-  max_decline_60d: 0.50         # 50% max decline in 60 days
-  max_debt_equity: 3.0          # Maximum debt-to-equity ratio
-  min_negative_earnings_quarters: 4  # Consecutive quarters
+### CSV Files
 
-  # Phase 2 Rules
-  # - Consecutive earnings misses (3+ of last 4 quarters)
-  # - Cash flow deterioration (quality < 0.5 for 3+ quarters)
-  # - Analyst exodus (3+ downgrades in 30 days, no upgrades)
+**superperform_TIMESTAMP.csv** contains:
+- Ticker symbol
+- RS Rating and Score
+- Stage (1-4)
+- Current price and moving averages
+- 52-week high/low metrics
+- Stage 2 criteria pass/fail
+- Fundamental metrics (if Step 2 enabled)
+- SEPA qualification status
+
+**sepa_qualified_TIMESTAMP.csv** contains:
+- Only stocks that passed ALL criteria
+- Ready for manual review and entry point analysis
+
+## Cache Management
+
+Scraped tickers are cached in `cache/finviz_tickers.json` for 24 hours.
+
+**To force a fresh scrape:**
+1. Delete the cache file: `rm cache/finviz_tickers.json`
+2. Or wait 24 hours for automatic cache expiration
+
+**Cache file format:**
+```json
+{
+  "timestamp": "2025-11-21T10:30:00",
+  "tickers": ["AAPL", "MSFT", ...],
+  "source": "finviz_screener",
+  "max_pages": 4
+}
 ```
 
-### Sector ETF Mappings
-```yaml
-sector_etfs:
-  Technology: XLK
-  Financials: XLF
-  Energy: XLE
-  Healthcare: XLV
-  # ... etc
-  default: SPY
-```
+## Understanding the Methodology
 
-## How It Works
+### Why This Matters
 
-The system analyzes stocks through a multi-stage pipeline:
+Mark Minervini's SEPA process is designed to identify stocks with the highest probability of becoming superperformers (100-300%+ gains). The multi-step filtering dramatically narrows down thousands of stocks to a small handful of elite candidates.
 
-1. **Data Collection**: Fetches price history, fundamentals, earnings, analyst data, short interest, and options from Yahoo Finance (cached 24h)
-2. **Indicator Calculation**: Computes scores across 5 categories (trend, volume, fundamental, market, advanced)
-3. **Sector Adjustment**: Applies sector-specific weight multipliers and threshold overrides
-4. **Veto Screening**: Filters high-risk stocks based on 9 automatic rules
-5. **Confidence Scoring**: Adjusts based on indicator agreement, advanced feature confirmation
-6. **Signal Generation**: Maps final score to BUY/SELL/NEUTRAL with probability estimates
-7. **Position Sizing**: Calculates risk-adjusted portfolio allocation (max 5%)
+**Key Principles:**
+1. **Stage 2 = Buyable**: Only buy stocks in Stage 2 uptrends
+2. **Acceleration Matters**: Look for earnings/sales growth that's INCREASING, not just positive
+3. **Relative Strength**: Best stocks outperform the market by wide margins
+4. **Low Volatility**: Smooth, steady uptrends indicate institutional accumulation
+5. **95% Fail**: Most stocks fail fundamental screening - that's the point!
 
-**Signal Thresholds**:
-- **+6 to +10**: STRONG BUY (70-80% probability higher)
-- **+3 to +6**: BUY (60-70% probability higher)
-- **-3 to +3**: NEUTRAL/HOLD
-- **Below -3**: SELL/AVOID
+### The Four Market Stages
 
-See `stock_scoring_system_spec.md` for detailed methodology.
+- **Stage 1**: Consolidation/Neglect - sideways movement, building base
+- **Stage 2**: Advancing - strong uptrend, institutional buying (BUY HERE)
+- **Stage 3**: Topping/Distribution - volatile, erratic swings (SELL HERE)
+- **Stage 4**: Declining - downtrend, lower lows (AVOID)
 
-## Validation Results
+### Why Acceleration Beats Growth
 
-### Phase 3 Performance (2022-2025)
-**259 trades** on 8-stock portfolio, 60-day holding periods, rebalanced monthly
+A stock with 10% → 15% → 22% → 35% earnings growth (accelerating) is far more powerful than one with 40% → 38% → 35% (decelerating), even though the latter has higher absolute growth. Acceleration signals improving business momentum and future potential.
 
-**Overall Performance:**
-- Win Rate: **61.8%** (160 winners, 99 losers)
-- Average Return: **+3.77%** (+18.6% improvement vs Phase 2)
-- Median Return: +2.74%
-- Best Trade: +77.94% | Worst Trade: -31.57%
+## Common Use Cases
 
-**Performance by Signal:**
-- **BUY signals** (score ≥ 3): **70.3%** win rate, **+6.95%** avg return (+86% improvement)
-- **STRONG BUY** (score ≥ 6): 67.6% win rate, +3.95% avg return
-- **NEUTRAL**: 51.4% win rate, +0.52% avg return
+### Daily/Weekly Routine
+1. Run SuperPerform.py once per week
+2. Review SEPA qualified stocks (typically 0-5 stocks)
+3. Manually analyze each for:
+   - Entry points (pullbacks to 50-day MA, VCP patterns)
+   - Catalysts (news, products, earnings)
+   - Sector leadership
+4. Set alerts and watch for proper entry setups
 
-**Top Performers:**
-- **WMT**: 81.1% win rate, +4.79% avg return
-- **NVDA**: 64.9% win rate, +12.18% avg return
-- **JPM**: 67.6% win rate, +3.95% avg return
-- **XOM**: 64.9% win rate, +3.88% avg return
+### Custom Screening
+1. Modify Finviz URL to focus on specific sectors or market caps
+2. Adjust `MIN_RS_RATING` to be more/less selective
+3. Tweak fundamental thresholds based on market conditions
+4. Run on your existing stock watchlist (set `USE_FINVIZ_SCRAPER = False`)
 
-**Phase 3 vs Phase 2 Improvements:**
-- ✅ Overall avg return: +3.18% → **+3.77%** (+18.6%)
-- ✅ BUY signal win rate: 66.9% → **70.3%** (+3.4 points)
-- ✅ BUY signal avg return: +3.73% → **+6.95%** (+86%)
-- ✅ Advanced features (20.4% weight) add significant value
+### Backtesting Study
+1. Save historical SEPA qualified lists weekly
+2. Track performance over 3-6 months
+3. Identify which additional criteria improve hit rate
+4. Refine your personal thresholds
 
-Run `python main.py --backtest` to see full performance breakdown by score range, signal type, and ticker.
+## Limitations & Disclaimers
 
----
-
-### Phase 4: Advanced Optimization Framework ✨ *NEW*
-
-**Implementation Status**: ✅ Complete and Ready to Run
-
-Phase 4 extends validation to **7 years (2018-2025)** with advanced optimization and statistical rigor:
-
-**Key Improvements Over Phase 3:**
-
-| Feature | Phase 3 | Phase 4 |
-|---------|---------|---------|
-| **Validation Period** | 3 years (2022-2025) | 7 years (2018-2025) |
-| **Optimization Objective** | Win Rate | Sharpe Ratio (risk-adjusted) |
-| **Validation Method** | Single period | Walk-forward (5-6 periods) |
-| **Market Adaptation** | Static weights | Regime-specific weights |
-| **Risk Metrics** | Basic (win rate, returns) | Advanced (Sharpe, Sortino, Max DD, Calmar) |
-| **Statistical Tests** | None | Significance tests, confidence intervals |
-
-**Phase 4 Framework Includes:**
-
-1. **Walk-Forward Optimization**
-   - Expanding window validation (train 2018-2019 → test 2020, train 2018-2020 → test 2021, etc.)
-   - 5-6 out-of-sample test periods
-   - Prevents overfitting through strict train/test separation
-   - Aggregated metrics across all test periods
-
-2. **Sharpe Ratio Optimization**
-   - Optimizes for risk-adjusted returns (return per unit of risk)
-   - Professional standard for portfolio management
-   - Accounts for volatility, not just raw returns
-
-3. **Regime-Specific Weights**
-   - Bull market weights (S&P 500 > 200-day MA)
-   - Bear market weights (S&P 500 < 200-day MA)
-   - Automatic regime detection and weight switching
-   - Adapts strategy to changing market conditions
-
-4. **Advanced Risk Metrics**
-   - **Sharpe Ratio**: Risk-adjusted returns
-   - **Sortino Ratio**: Downside deviation only
-   - **Maximum Drawdown**: Worst peak-to-trough decline
-   - **Calmar Ratio**: Return / max drawdown
-   - **Annualized Returns & Volatility**
-
-5. **Statistical Validation**
-   - Win rate significance testing (binomial test)
-   - Mean return significance (t-test)
-   - Bootstrap confidence intervals (95%)
-   - Monte Carlo simulation (1000+ iterations)
-   - Phase 3 vs Phase 4 comparison tests
-
-**How to Run Phase 4:**
-
-```bash
-# Complete automated pipeline (recommended)
-python optimization.py
-
-# Or individual components
-python main.py --walk-forward       # Walk-forward optimization
-python main.py --optimize-regime    # Regime-specific weights
-```
-
-**Expected Outcomes:**
-- Sharpe Ratio: 0.5-1.5+ (target: > 1.0 for good risk-adjusted performance)
-- Out-of-sample win rate: 60-65%+
-- Statistical significance: p < 0.05 (better than random)
-- Regime-adaptive performance: Improved stability across market cycles
-
-**Deliverables:**
-- `config.yaml` updated with optimized bull/bear market weights
-- `phase4_validation_report.md` - Comprehensive analysis with:
-  - Walk-forward period-by-period results
-  - Regime comparison (bull vs bear performance)
-  - Statistical significance tests
-  - Phase 3 vs Phase 4 comparison
-- Console output with real-time progress and results
-
-**Note**: First run takes 30-60 minutes. Results are cached for analysis.
-
-## Data Sources
-
-- **Yahoo Finance** (yfinance): Stock prices, fundamentals, earnings, analyst data, short interest, options chains
-- **Market Indices**: ^GSPC (S&P 500), ^VIX (Volatility)
-- **Sector ETFs**: XLK, XLF, XLE, XLV, XLI, XLY, XLU, XLB, XLRE, XLC, XLP
-- **Cost**: Free (no API key required)
-- **Caching**: 24h for fundamentals/advanced features, 1h for prices (stored in `cache/` directory)
-
-**Phase 3 Data:**
-- Earnings history (actual vs estimate, surprise %)
-- Analyst upgrades/downgrades (last 30 days)
-- Short interest (% of float, days to cover)
-- Options flow (put/call ratios, volume vs open interest)
+- **Not Financial Advice**: This is an educational tool. Do your own research.
+- **Data Quality**: Relies on yfinance data which can have gaps or errors
+- **Fundamental Data**: Quarterly data from yfinance may be incomplete for some stocks
+- **Manual Review Required**: SEPA qualified stocks still need Step 4 (manual analysis)
+- **No Guarantees**: Passing all criteria doesn't guarantee future performance
+- **Market Conditions Matter**: Works best in bull markets (overall market in Stage 2)
 
 ## Troubleshooting
 
-**"Unable to fetch stock data"**: Check internet connection, verify ticker symbol, or clear cache (`rm -rf cache/`)
+### "No stocks meet RS >= 70 threshold"
+- Lower `MIN_RS_RATING` to 60-65
+- Increase `MAX_PAGES` to scrape more stocks
+- Market may be weak - check if SPY is in Stage 2
 
-**"Module not found"**: Activate virtual environment and run `pip install -r requirements.txt`
+### "Failed to scrape Finviz screener"
+- Check internet connection
+- Finviz may be temporarily down
+- Possible rate limiting - wait a few minutes
+- Set `USE_FINVIZ_SCRAPER = False` and use manual list
 
-**Rate limit errors**: Wait a few minutes - cache will reduce API calls on subsequent runs
+### "Insufficient quarterly data" for all stocks
+- yfinance API may be having issues
+- Try again later
+- Some stocks (ETFs, recent IPOs) lack quarterly data
+- Set `ENABLE_STEP2 = False` to skip fundamental screening
 
-**Incorrect scores**: Check `config.yaml` configuration, verify data is recent, some stocks may have incomplete data
+### Script is very slow
+- Normal - analyzing 50-100 stocks takes 5-10 minutes
+- Reduce `MAX_PAGES` to analyze fewer stocks
+- Fundamental screening adds significant time
+- Cache helps on subsequent runs (within 24 hours)
 
-## Performance
+## Performance Tips
 
-- **Timeframe**: Optimized for 1-3 month predictions
-- **Execution**: 5-10 seconds per stock (first run), <1 second (cached)
-- **Backtest**: 5-10 minutes
-- **Weight Optimization**: 15-30 minutes (243 combinations)
-- **Phase 4 Walk-Forward**: 30-60 minutes (5-6 optimization rounds)
-- **Complexity**: ~3,300 lines of code (Phase 4 complete)
+- **Use caching**: Let cache work for you - don't force refresh unless needed
+- **Limit MAX_PAGES**: Start with 2-3 pages (40-60 stocks) for faster results
+- **Disable STEP2 initially**: Run without fundamental screening first to see Stage 2 candidates
+- **Run during off-hours**: Less network congestion, faster API responses
 
-## Methodology
+## Contributing
 
-Based on professional hedge fund methodologies (Renaissance Technologies, AQR, Two Sigma, BlackRock) and academic research (Fama-French, Momentum studies).
+This is a personal project, but suggestions welcome! Areas for improvement:
+- Better fundamental data sources (Alpha Vantage, IEX, etc.)
+- VCP pattern detection automation
+- Entry point identification
+- Sector rotation analysis
+- Chart pattern recognition
 
-See `stock_scoring_system_spec.md` for detailed methodology.
+## References
 
-## Disclaimer
+- **Book**: *Trade Like a Stock Market Wizard* by Mark Minervini
+- **Methodology**: SEPA (Specific Entry Point Analysis)
+- **IBD**: Investor's Business Daily (RS rating methodology)
+- **Data Source**: Yahoo Finance via yfinance
+- **Screener**: Finviz.com
 
-This tool is for educational and informational purposes only. Not financial advice. Always do your own research and consult financial professionals before making investment decisions.
+## License
+
+This project is for educational purposes. Use at your own risk.
 
 ---
 
-**Built with Python, yfinance, scipy, and quantitative methodologies**
+**Remember**: The best traders combine quantitative screening (this tool) with qualitative analysis (catalysts, charts, news) and proper risk management. No system is perfect - focus on managing risk and cutting losses quickly.
 
-**Current Status**: Phase 5b complete ✅
-
-**Phase 3 Foundation:**
-- 5-category scoring system with advanced features
-- 61.8% win rate, +3.77% avg return (validated on 2022-2025 data)
-- BUY signals: 70.3% win rate, +6.95% avg return
-- Optimized weights via 243-combination grid search
-
-**Phase 4 Enhancements:**
-- Walk-forward optimization with Sharpe ratio objective
-- 7-year validation period (2018-2025) with 5-6 out-of-sample test periods
-- Regime-specific weights for bull/bear market adaptation
-- Advanced risk metrics (Sharpe, Sortino, Max Drawdown, Calmar)
-- Statistical validation (significance tests, confidence intervals, Monte Carlo)
-- Comprehensive reporting and automated pipeline
-
-**Phase 5a: Enhanced Momentum & Risk Intelligence**
-- **52-Week High Breakout Detection**: Identifies momentum breakouts at new highs with volume confirmation
-- **S&P 500 Relative Strength Ranking**: Percentile comparison against all 500 constituents (NVDA: 96th percentile!)
-- **Revenue Growth Acceleration**: Quarterly revenue trend analysis catches declining growth (AAPL revenue -25% flagged)
-- **Earnings Timing Risk Filter**: Avoids high-volatility periods near earnings announcements (7-14 day windows)
-- **Validated Results**: 63.5% win rate (+1.7% from Phase 3), +3.89% avg return (+3% improvement)
-- **Score Ranges Updated**: Technical 10, Fundamental 8, Market 7, Advanced 13 (was 6/5/4/10)
-
-**Phase 5b: Advanced Momentum Analysis**
-- **Bollinger Band Squeeze Detection**: Catches low-volatility compression before explosive breakouts (+2 points)
-- **ATR Consolidation Patterns**: Identifies "coiling spring" setups with declining volatility near highs (+2 points)
-- **Multi-Timeframe Alignment**: Validates trends across daily and weekly timeframes to reduce whipsaws (+1 point)
-- **Short-Term Support/Resistance**: Detects 60-day bounces and failed breakouts for better entry timing (+1 point)
-- **OBV Divergence Analysis**: Tracks volume flow for early accumulation/distribution signals (+1 point)
-- **Exceptional Results**: **72.4% win rate (+8.9% from Phase 5a!)**, +6.14% avg return (+58% improvement), Sharpe 1.160, 105 test trades
-- **Score Ranges Expanded**: Technical 16 (was 10), Volume 5 (was 3) - Total system: 49 points (was 41)
-- **Signal Thresholds**: STRONG_BUY 3.5, BUY 2.5 maintained
-
-**Phase 5c: Sector Intelligence** ✨ *NEW*
-- **Sector Performance Tracking** (`backtesting/engine.py`): Per-sector win rate analysis with `--sector-analysis` flag
-- **Indicator Override System** (`config.yaml`): Sector-specific multipliers for all 15+ indicators (RSI, MACD, ROE, etc.)
-- **Smart Sector Adjustments**:
-  - **Healthcare**: Reduced momentum penalties (0.4x RSI/MACD), emphasized fundamentals (1.5x ROE, 1.8x revenue growth)
-  - **Energy**: Cyclical-aware (0.3x revenue growth, 1.8x relative strength, 1.5x market regime)
-  - **Technology**: Amplified momentum (1.3x RSI, 1.5x Bollinger squeeze), de-emphasized P/E (0.7x)
-  - **Financial Services**: Rate-sensitive (1.4x market regime, 0.7x VIX), fundamental quality (1.4x ROE)
-  - **Consumer Defensive**: Quality focus (1.4x ROE, 0.8x revenue growth, 0.6x volatility)
-- **Automated Sector Optimizer** (`backtesting/sector_optimizer.py`): Grid search tool with progress tracking
-- **Deep Copy Fix** (`scoring/calculator.py`): Fixed indicator override application bug
-- **Baseline Results**: Healthcare 51.2%, Energy 58.1%, Technology 66.3%, Overall 63.5%
-- **Target**: 75%+ win rate across ALL sectors
-
-**Next Step**: Run `python -m backtesting.sector_optimizer` to optimize all sectors, then implement Phase 5d (Full Integration)
-
-**Ready to Run**: `python main.py NVDA` or `python main.py --backtest`
+**Happy Trading! 📈**

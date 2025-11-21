@@ -1,9 +1,8 @@
+# SuperPerform - Minervini SEPA Stock Analyzer
+# Core dependencies for stock analysis
+
 yfinance>=0.2.48
 pandas>=2.0.0
 numpy>=1.24.0
-pandas-ta>=0.3.14b
-pyyaml>=6.0
 requests>=2.31.0
-scipy>=1.11.0
-tqdm>=4.66.0
-lxml>=4.9.0
+beautifulsoup4>=4.12.0
