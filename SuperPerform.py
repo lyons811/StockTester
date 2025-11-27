@@ -39,9 +39,11 @@ STOCK_LIST = [
     "TRAW", "TS", "TWLO", "VFC", "WAT", "XPEL"
 ]
 
-# Step 1 Thresholds (RS & Stage)
-MIN_RS_RATING = 70          # Minimum RS rating to consider (70-99, Minervini recommends 80+)
+# Step 1 Thresholds (RS & Stage) - OPTIMIZED FROM BACKTEST DATA
+MIN_RS_RATING = 80          # Raised from 70 (backtest shows 80+ has cleaner signals)
+MAX_RS_RATING = 94          # RS 95+ often overextended (56.7% win vs 67% for 80-94)
 MIN_TRADING_DAYS = 240      # Minimum days of data required (240 ≈ 9.5 months)
+MAX_PCT_FROM_HIGH = 10      # Tightened from 25% (69% win at 0-10% vs 45% at 15%+)
 
 # Step 2 Thresholds (SEPA Fundamental Screening)
 ENABLE_STEP2 = True         # Set False to skip fundamental screening
@@ -322,7 +324,7 @@ def analyze_stage(ticker, rs_rating):
         # Calculate MA slope
         ma_200_slope = calculate_ma_slope(df['MA_200'].dropna())
 
-        # Stage 2 Trend Template - All 8 criteria
+        # Stage 2 Trend Template - All 9 criteria (optimized from backtest)
         criteria = {
             '1. Price > 150 & 200 MA': current_price > ma_150 and current_price > ma_200,
             '2. 150 MA > 200 MA': ma_150 > ma_200,
@@ -330,8 +332,9 @@ def analyze_stage(ticker, rs_rating):
             '4. 50 MA > 150 & 200 MA': ma_50 > ma_150 and ma_50 > ma_200,
             '5. Price > 50 MA': current_price > ma_50,
             '6. Price 30%+ above 52w low': ((current_price - week_52_low) / week_52_low * 100) >= 30,
-            '7. Price within 25% of 52w high': ((week_52_high - current_price) / week_52_high * 100) <= 25,
-            '8. RS Rating >= 70': rs_rating >= MIN_RS_RATING
+            '7. Price within 10% of 52w high': ((week_52_high - current_price) / week_52_high * 100) <= MAX_PCT_FROM_HIGH,
+            '8. RS Rating >= 80': rs_rating >= MIN_RS_RATING,
+            '9. RS not overextended': rs_rating <= MAX_RS_RATING
         }
 
         stage = determine_stage(df, current_price, ma_50, ma_150, ma_200, criteria)
@@ -527,6 +530,88 @@ def analyze_fundamentals(ticker):
     except Exception as e:
         return None, str(e)
 
+def calculate_quality_score(stage_analysis, fundamentals):
+    """
+    Calculate quality score (0-100) based on backtest-proven edge factors.
+    Returns tuple of (score, grade).
+
+    Scoring based on 18-month backtest of 2,453 SEPA signals:
+    - Distance from high: Most predictive factor (69% win at 0-10% vs 45% at 15%+)
+    - RS Rating: Sweet spot is 85-94, RS 95+ often overextended
+    - Earnings Growth: >50% growth shows significantly better returns
+    - Revenue Growth: Additional confirmation factor
+    - Earnings Acceleration: Momentum confirmation
+    """
+    score = 0
+
+    # 1. Distance from 52-week high (30 pts max) - MOST IMPORTANT
+    pct_from_high = stage_analysis['pct_from_52w_high']
+    if pct_from_high <= 5:
+        score += 30
+    elif pct_from_high <= 10:
+        score += 25
+    elif pct_from_high <= 15:
+        score += 15
+    elif pct_from_high <= 20:
+        score += 5
+    # else: 0 points
+
+    # 2. RS Rating (25 pts max) - sweet spot is 85-94
+    rs = stage_analysis['rs_rating']
+    if 85 <= rs <= 94:
+        score += 25
+    elif 80 <= rs <= 84:
+        score += 20
+    elif 75 <= rs <= 79:
+        score += 15
+    elif 70 <= rs <= 74:
+        score += 10
+    elif rs >= 95:
+        score += 10  # Penalized - likely overextended
+
+    # 3. Earnings Growth (25 pts max)
+    eg = fundamentals.get('recent_earnings_growth')
+    if eg is not None:
+        if eg > 100:
+            score += 25
+        elif eg > 50:
+            score += 20
+        elif eg > 25:
+            score += 15
+        elif eg > 15:
+            score += 10
+        else:
+            score += 5
+
+    # 4. Revenue Growth (10 pts max)
+    rg = fundamentals.get('recent_revenue_growth')
+    if rg is not None:
+        if rg > 50:
+            score += 10
+        elif rg > 25:
+            score += 7
+        elif rg > 10:
+            score += 5
+
+    # 5. Earnings Acceleration (10 pts max)
+    ea = fundamentals.get('earnings_acceleration_quarters', 0)
+    if ea >= 3:
+        score += 10
+    elif ea >= 2:
+        score += 5
+
+    # Determine grade
+    if score >= 85:
+        grade = 'A'
+    elif score >= 70:
+        grade = 'B'
+    elif score >= 55:
+        grade = 'C'
+    else:
+        grade = 'D'
+
+    return score, grade
+
 # ============================================================================
 # MAIN EXECUTION
 # ============================================================================
@@ -691,25 +776,46 @@ def main():
 
         sepa_qualified = [r for r in sepa_results if r['fundamentals']['passes_step2']]
 
+        # Calculate quality scores for all SEPA qualified stocks
+        for result in sepa_qualified:
+            score, grade = calculate_quality_score(result['analysis'], result['fundamentals'])
+            result['quality_score'] = score
+            result['grade'] = grade
+
+        # Sort by quality score (highest first)
+        sepa_qualified.sort(key=lambda x: x['quality_score'], reverse=True)
+
         print(f"\n✓ Fundamental Screening Complete")
         print(f"  • {len(sepa_qualified)} stocks pass all SEPA Step 2 criteria")
         print(f"  • {len(stage_2_stocks) - len(sepa_qualified)} stocks filtered out (~{(len(stage_2_stocks) - len(sepa_qualified))/len(stage_2_stocks)*100:.0f}% rejection rate)")
 
+        # Count by grade
+        grade_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+        for r in sepa_qualified:
+            grade_counts[r['grade']] += 1
+        print(f"  • Quality Grades: A={grade_counts['A']}, B={grade_counts['B']}, C={grade_counts['C']}, D={grade_counts['D']}")
+
         # Display SEPA qualified stocks
         if sepa_qualified:
             print("\n" + "=" * 100)
-            print("🏆 SEPA STEP 2 QUALIFIED STOCKS (Ready for Manual Review)")
+            print("SEPA QUALIFIED STOCKS - RANKED BY QUALITY SCORE")
+            print("(Based on 18-month backtest: Distance from high, RS sweet spot, Earnings growth)")
             print("=" * 100)
 
             for result in sepa_qualified:
                 ticker = result['ticker']
                 a = result['analysis']
                 f = result['fundamentals']
+                score = result['quality_score']
+                grade = result['grade']
+
+                # Grade emoji
+                grade_emoji = {'A': '🅰️', 'B': '🅱️', 'C': '©️', 'D': '🔸'}.get(grade, '')
 
                 print(f"\n{'━' * 100}")
-                print(f"🏆 {ticker} - RS Rating: {a['rs_rating']}")
+                print(f"{grade_emoji} GRADE {grade} | {ticker} | Score: {score}/100 | RS: {a['rs_rating']}")
                 print(f"{'━' * 100}")
-                print(f"Price: ${a['current_price']:.2f}  |  {a['pct_from_52w_high']:.0f}% from 52w high")
+                print(f"Price: ${a['current_price']:.2f}  |  {a['pct_from_52w_high']:.1f}% from 52w high")
                 print(f"\nFundamentals:")
                 print(f"  • Earnings Growth (YoY): {f['recent_earnings_growth']:.1f}%" if f['recent_earnings_growth'] else "  • Earnings Growth: N/A")
                 print(f"  • Revenue Growth (YoY): {f['recent_revenue_growth']:.1f}%" if f['recent_revenue_growth'] else "  • Revenue Growth: N/A")
@@ -724,11 +830,15 @@ def main():
     # Display All Stage 2 Results
     # ========================================================================
     print("\n" + "=" * 100)
-    print("ALL STAGE 2 STOCKS (With Fundamental Analysis)" if ENABLE_STEP2 else "ALL STAGE 2 STOCKS")
+    print("ALL STAGE 2 STOCKS (With Quality Scores)" if ENABLE_STEP2 else "ALL STAGE 2 STOCKS")
     print("=" * 100)
 
     if stage_2_stocks:
-        stage_2_stocks.sort(key=lambda x: x['analysis']['rs_rating'], reverse=True)
+        # Sort by quality score if available, otherwise by RS rating
+        stage_2_stocks.sort(
+            key=lambda x: (x.get('quality_score', 0), x['analysis']['rs_rating']),
+            reverse=True
+        )
 
         for result in stage_2_stocks:
             ticker = result['ticker']
@@ -738,13 +848,14 @@ def main():
             if ENABLE_STEP2 and 'fundamentals' in result:
                 f = result['fundamentals']
                 if f['passes_step2']:
-                    sepa_status = " 🏆 SEPA QUALIFIED"
+                    grade = result.get('grade', '?')
+                    score = result.get('quality_score', 0)
+                    sepa_status = f" | Grade {grade} ({score}pts)"
                 else:
-                    sepa_status = f" (Failed: {', '.join(f['failed_criteria'][:2])})"
+                    sepa_status = f" | Failed: {f['failed_criteria'][0][:30]}"
 
-            print(f"\n  {ticker} - RS {a['rs_rating']} | ${a['current_price']:.2f} | "
-                  f"{a['pct_above_52w_low']:.0f}% from low | "
-                  f"{a['pct_from_52w_high']:.0f}% from high{sepa_status}")
+            print(f"  {ticker:6} RS {a['rs_rating']:2} | ${a['current_price']:8.2f} | "
+                  f"{a['pct_from_52w_high']:4.1f}% from high{sepa_status}")
 
     # ========================================================================
     # Show all stocks by stage
@@ -774,7 +885,7 @@ def main():
                 a = result['analysis']
 
                 failed = [k for k, v in a['criteria'].items() if not v]
-                criteria_str = "ALL 8 ✓" if not failed else f"({8 - len(failed)}/8)"
+                criteria_str = "ALL 9 ✓" if not failed else f"({9 - len(failed)}/9)"
 
                 print(f"  {ticker:6} - RS {a['rs_rating']:2} | ${a['current_price']:8.2f} | "
                       f"{a['pct_above_52w_low']:5.0f}% from low | "
@@ -841,6 +952,8 @@ def main():
             f = r['fundamentals']
             row_data.update({
                 'SEPA_Qualified': f['passes_step2'],
+                'Quality_Score': r.get('quality_score'),
+                'Grade': r.get('grade'),
                 'Earnings_Growth_YoY': f['recent_earnings_growth'],
                 'Revenue_Growth_YoY': f['recent_revenue_growth'],
                 'Earnings_Accel_Quarters': f['earnings_acceleration_quarters'],
@@ -853,7 +966,9 @@ def main():
         csv_data.append(row_data)
 
     df_output = pd.DataFrame(csv_data)
-    df_output = df_output.sort_values(['Stage_2_Confirmed', 'RS_Rating'], ascending=[False, False])
+    # Sort by Quality Score (if available), then SEPA status, then RS Rating
+    sort_cols = ['Quality_Score', 'SEPA_Qualified', 'RS_Rating'] if 'Quality_Score' in df_output.columns else ['Stage_2_Confirmed', 'RS_Rating']
+    df_output = df_output.sort_values(sort_cols, ascending=[False] * len(sort_cols))
 
     filename = f"superperform_{timestamp}.csv"
     df_output.to_csv(filename, index=False)

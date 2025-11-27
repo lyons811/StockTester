@@ -106,6 +106,23 @@ def safe_div(a, b):
         return None
     return a / b
 
+def normalize_date_for_comparison(as_of_date, df_index):
+    """
+    Ensure as_of_date can be compared with the dataframe index.
+    Handles mixed timezone states by localizing or keeping naive as needed.
+    """
+    as_of_ts = pd.Timestamp(as_of_date)
+
+    # If df_index is timezone-aware, localize as_of_date to match
+    if hasattr(df_index, 'tz') and df_index.tz is not None:
+        if as_of_ts.tz is None:
+            try:
+                return as_of_ts.tz_localize(df_index.tz)
+            except Exception:
+                # Fallback: return naive timestamp (comparison may still work)
+                return as_of_ts
+    return as_of_ts
+
 # ============================================================================
 # STOCK UNIVERSE FUNCTIONS
 # ============================================================================
@@ -345,7 +362,11 @@ def save_price_data(ticker, df):
     """Save price data to cache"""
     cache_file = PRICE_CACHE_DIR / f"{ticker}.csv"
     try:
-        df.to_csv(cache_file)
+        # Strip timezone for consistent caching (avoids tz mismatch on reload)
+        df_to_save = df.copy()
+        if df_to_save.index.tz is not None:
+            df_to_save.index = df_to_save.index.tz_localize(None)
+        df_to_save.to_csv(cache_file)
     except Exception:
         pass
 
@@ -443,7 +464,11 @@ def fetch_spy_data(start_date, end_date):
         df = spy.history(start=start_date, end=end_date)
 
         if df is not None and len(df) > 100:
-            df.to_csv(cache_file)
+            # Strip timezone for consistent caching (avoids tz mismatch on reload)
+            df_to_save = df.copy()
+            if df_to_save.index.tz is not None:
+                df_to_save.index = df_to_save.index.tz_localize(None)
+            df_to_save.to_csv(cache_file)
             return df
     except Exception as e:
         print(f"Error fetching SPY: {e}")
@@ -481,6 +506,9 @@ def passes_finviz_filter_historical(df, as_of_date):
     Criteria: 30%+ above 52w low, Price > 200MA, 50MA > 200MA
     """
     try:
+        # Normalize date for timezone-aware comparison
+        as_of_date = normalize_date_for_comparison(as_of_date, df.index)
+
         # Filter to data up to as_of_date
         df_hist = df[df.index <= as_of_date]
 
@@ -529,9 +557,13 @@ def calculate_ibd_rs_historical(ticker, spy_df, price_df, as_of_date):
     Adapted from SuperPerform.py
     """
     try:
+        # Normalize dates for timezone-aware comparison
+        price_as_of = normalize_date_for_comparison(as_of_date, price_df.index)
+        spy_as_of = normalize_date_for_comparison(as_of_date, spy_df.index)
+
         # Filter to data up to as_of_date
-        df = price_df[price_df.index <= as_of_date]
-        spy = spy_df[spy_df.index <= as_of_date]
+        df = price_df[price_df.index <= price_as_of]
+        spy = spy_df[spy_df.index <= spy_as_of]
 
         if len(df) < MIN_TRADING_DAYS or len(spy) < MIN_TRADING_DAYS:
             return None, "Insufficient data"
@@ -570,6 +602,9 @@ def analyze_stage_historical(ticker, price_df, rs_rating, as_of_date):
     Adapted from SuperPerform.py
     """
     try:
+        # Normalize date for timezone-aware comparison
+        as_of_date = normalize_date_for_comparison(as_of_date, price_df.index)
+
         df = price_df[price_df.index <= as_of_date].copy()
 
         if len(df) < 200:
@@ -630,6 +665,9 @@ def analyze_stage_historical(ticker, price_df, rs_rating, as_of_date):
 def calculate_atr_percent_historical(price_df, as_of_date):
     """Calculate ATR as percentage of price as of a historical date"""
     try:
+        # Normalize date for timezone-aware comparison
+        as_of_date = normalize_date_for_comparison(as_of_date, price_df.index)
+
         df = price_df[price_df.index <= as_of_date].tail(90).copy()
 
         if len(df) < 20:
@@ -650,8 +688,11 @@ def calculate_atr_percent_historical(price_df, as_of_date):
 
 def analyze_fundamentals_historical(ticker, as_of_date):
     """
-    Analyze fundamentals with point-in-time awareness
-    Only considers quarters that would have been reported by as_of_date
+    Analyze quarterly earnings, sales, and margins for acceleration.
+
+    Note: Uses current fundamental data from yfinance (not point-in-time historical).
+    This introduces some look-ahead bias but yfinance doesn't provide historical
+    fundamental snapshots. Matches SuperPerform.py behavior.
     """
     try:
         stock = yf.Ticker(ticker)
@@ -660,21 +701,6 @@ def analyze_fundamentals_historical(ticker, as_of_date):
 
         if quarterly_income is None or len(quarterly_income.columns) < 4:
             return None, "Insufficient quarterly data"
-
-        # Filter to quarters reported before as_of_date
-        # Rule: Quarter data available ~45 days after quarter end
-        valid_quarters = []
-        for col in quarterly_income.columns:
-            quarter_end = pd.to_datetime(col)
-            report_date = quarter_end + timedelta(days=45)
-            if report_date <= as_of_date:
-                valid_quarters.append(col)
-
-        if len(valid_quarters) < 4:
-            return None, "Insufficient historical quarters"
-
-        # Use only valid quarters
-        quarterly_income = quarterly_income[valid_quarters]
 
         # Get earnings data
         earnings_fields = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
@@ -765,8 +791,11 @@ def track_performance(ticker, entry_date, entry_price, price_df):
     Returns dict with returns and hit metrics
     """
     try:
+        # Normalize date for timezone-aware comparison
+        entry_date_tz = normalize_date_for_comparison(entry_date, price_df.index)
+
         # Get data after entry date
-        df_forward = price_df[price_df.index > entry_date]
+        df_forward = price_df[price_df.index > entry_date_tz]
 
         if len(df_forward) < 20:
             return None
@@ -778,7 +807,7 @@ def track_performance(ticker, entry_date, entry_price, price_df):
 
         # Calculate returns at different periods
         for months in TRACK_MONTHS:
-            target_date = entry_date + timedelta(days=months * 30)
+            target_date = entry_date_tz + timedelta(days=months * 30)
             df_period = df_forward[df_forward.index <= target_date]
 
             if len(df_period) > 0:
@@ -788,7 +817,7 @@ def track_performance(ticker, entry_date, entry_price, price_df):
                 results[f'return_{months}mo'] = None
 
         # Calculate max gain in 6 months
-        df_6mo = df_forward[df_forward.index <= entry_date + timedelta(days=180)]
+        df_6mo = df_forward[df_forward.index <= entry_date_tz + timedelta(days=180)]
         if len(df_6mo) > 0:
             max_price = df_6mo['High'].max()
             results['max_gain_6mo'] = ((max_price - entry_price) / entry_price) * 100
@@ -812,7 +841,7 @@ def track_performance(ticker, entry_date, entry_price, price_df):
 
             if len(hit_df) > 0:
                 hit_date = hit_df.index[0]
-                results[f'days_to_{target}pct'] = (hit_date - entry_date).days
+                results[f'days_to_{target}pct'] = (hit_date - entry_date_tz).days
             else:
                 results[f'days_to_{target}pct'] = None
 
