@@ -43,11 +43,14 @@ Stocks that pass all criteria are ready for manual review (SEPA Step 4), where y
 - **Automatic Finviz Scraping**: Fetches stocks from Finviz screener (configurable filters)
 - **24-Hour Caching**: Saves scraped tickers to avoid re-scraping
 - **Comprehensive Analysis**: RS ratings, Stage analysis, and fundamental screening
+- **Historical Backtesting**: Validate SEPA methodology with 2 years of historical data
 - **Multiple CSV Outputs**:
   - `superperform_TIMESTAMP.csv` - All results with detailed metrics
   - `sepa_qualified_TIMESTAMP.csv` - Only elite stocks that passed all filters
+  - `backtest_results_TIMESTAMP.csv` - Historical backtest results
 - **Configurable Thresholds**: Easily adjust screening parameters
 - **Progress Tracking**: Real-time feedback during analysis
+- **Parallel Processing**: Multi-core support for faster backtesting
 
 ## Installation
 
@@ -61,6 +64,11 @@ Stocks that pass all criteria are ready for manual review (SEPA Step 4), where y
 3. **Run the analyzer**:
    ```bash
    python SuperPerform.py
+   ```
+
+4. **Run the backtester** (optional - validates methodology):
+   ```bash
+   python SEPABacktester.py
    ```
 
 ## Configuration
@@ -226,10 +234,123 @@ A stock with 10% → 15% → 22% → 35% earnings growth (accelerating) is far m
 4. Run on your existing stock watchlist (set `USE_FINVIZ_SCRAPER = False`)
 
 ### Backtesting Study
-1. Save historical SEPA qualified lists weekly
-2. Track performance over 3-6 months
-3. Identify which additional criteria improve hit rate
-4. Refine your personal thresholds
+Use `SEPABacktester.py` to historically validate the SEPA methodology (see below)
+
+---
+
+## SEPABacktester - Historical Performance Validation
+
+The `SEPABacktester.py` script answers the question: **"Do SEPA-qualified stocks actually go up?"**
+
+It simulates running SuperPerform.py weekly over the past 2 years and tracks how each qualified stock performed afterward.
+
+### How It Works
+
+1. **Downloads stock universe** (~500-1000 stocks from S&P 500, NASDAQ-100, etc.)
+2. **Caches 2.5 years of price data** locally for fast analysis
+3. **For each Monday over 2 years** (~104 weeks):
+   - Filters stocks meeting Finviz-like criteria (30%+ above 52w low, price > 200MA, 50MA > 200MA)
+   - Calculates RS ratings and Stage 2 criteria
+   - Runs fundamental screening (earnings/revenue acceleration)
+   - Records stocks that pass all SEPA criteria
+4. **Tracks forward performance** for each qualified stock:
+   - 1-month, 3-month, 6-month returns
+   - Maximum gain within 6 months
+   - Days to hit +10%, +20%, +50% targets
+
+### Running the Backtester
+
+```bash
+python SEPABacktester.py
+```
+
+### Configuration
+
+Edit the configuration section at the top of `SEPABacktester.py`:
+
+```python
+TEST_MODE = False           # True for quick test (40 stocks, 3 months)
+BACKTEST_YEARS = 2          # How far back to test
+CHECK_FREQUENCY = 'weekly'  # Check every Monday
+NUM_WORKERS = 23            # Parallel workers (auto-detected)
+```
+
+### Runtime Estimates
+
+| Mode | Stocks | Period | Time |
+|------|--------|--------|------|
+| Test Mode | 40 | 3 months | 2-5 minutes |
+| Full Backtest | 500-1000 | 2 years | 4-8 hours |
+
+**Note**: First run downloads all price data (~30-60 min). Subsequent runs use cached data and are faster.
+
+### Output Files
+
+Results are saved to the `results/` directory:
+
+- **`backtest_results_TIMESTAMP.csv`** - All qualification events with metrics:
+  ```
+  date, ticker, entry_price, rs_rating, earnings_accel, revenue_accel,
+  return_1mo, return_3mo, return_6mo, max_gain_6mo, days_to_10pct, days_to_20pct
+  ```
+
+- **`backtest_summary_TIMESTAMP.txt`** - Aggregated statistics
+
+### Sample Output
+
+```
+SEPA BACKTESTER RESULTS
+================================================================================
+Total qualification events: 1,247
+Unique stocks: 312
+
+WIN RATES (Positive Returns):
+  1-month: 58.2% (726/1247)
+  3-month: 62.1% (775/1247)
+  6-month: 65.8% (821/1247)
+
+HIT RATES (Target Achieved within 6 months):
+  +10%: 45.3% hit (avg 32 days)
+  +20%: 28.7% hit (avg 58 days)
+  +50%: 12.4% hit (avg 89 days)
+
+AVERAGE RETURNS:
+  1-month: +4.2% avg, +3.1% median
+  3-month: +11.8% avg, +8.5% median
+  6-month: +18.5% avg, +12.2% median
+  Max gain (6mo): +32.1% avg
+
+TOP 10 BEST PERFORMERS (by max gain):
+  SMCI   +450% (qualified 2023-06-12)
+  NVDA   +280% (qualified 2023-01-09)
+  ...
+```
+
+### Cache Management
+
+Price data is cached in `cache/price_data/` as CSV files per ticker.
+
+**To force fresh data download:**
+```bash
+rm -rf cache/price_data/
+python SEPABacktester.py
+```
+
+### Interpreting Results
+
+- **Win Rate > 50%**: Strategy has edge over random selection
+- **Hit Rate for +20%**: Key metric - how often do qualified stocks become "winners"
+- **Average vs Median**: Large gap indicates a few big winners skew the average
+- **Best Performers**: Look for patterns in timing and sectors
+
+### Limitations
+
+- **Survivorship Bias**: Delisted stocks may be missing from universe
+- **Point-in-Time Fundamentals**: Uses 45-day delay assumption for earnings availability
+- **No Transaction Costs**: Results don't account for commissions or slippage
+- **Look-Ahead Bias Mitigation**: Only uses data available on each historical date
+
+---
 
 ## Limitations & Disclaimers
 
