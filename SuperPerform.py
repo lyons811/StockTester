@@ -53,6 +53,22 @@ MIN_SALES_GROWTH = 10.0         # Minimum YoY sales growth % (recent quarter)
 REQUIRE_MARGIN_EXPANSION = True # Must show margin expansion over 8 quarters
 MAX_ATR_PERCENT = 6.0           # Maximum ATR as % of price (lower = smoother trend)
 
+# Entry Timing Thresholds (NEW)
+EMA_PULLBACK_THRESHOLD = 5.0    # Within 5% of EMA = buy zone
+EMA_EXTENDED_THRESHOLD = 10.0   # >10% above 21 EMA = extended/chasing
+
+# Volume Thresholds (NEW)
+VOLUME_STRONG_RATIO = 1.5       # 1.5x 50-day avg = strong volume
+VOLUME_WEAK_RATIO = 0.8         # <0.8x avg = weak volume
+UP_DOWN_VOLUME_THRESHOLD = 1.2  # Up days should have more volume than down days
+
+# Earnings Warning (NEW)
+EARNINGS_DANGER_DAYS = 14       # Within 14 days = danger zone
+EARNINGS_CAUTION_DAYS = 45      # Within 45 days = caution
+
+# Sector Concentration (NEW)
+MAX_SECTOR_CONCENTRATION = 40   # Warn if >40% of picks in one sector
+
 # Finviz Scraper Settings
 USE_FINVIZ_SCRAPER = True   # Set False to use hardcoded STOCK_LIST instead
 MAX_PAGES = 4               # Number of Finviz pages to scrape (1 page ≈ 20 stocks)
@@ -362,6 +378,327 @@ def analyze_stage(ticker, rs_rating):
         return None, str(e)
 
 # ============================================================================
+# ENTRY TIMING ANALYSIS (NEW)
+# ============================================================================
+
+def analyze_entry_timing(df):
+    """
+    Analyze if stock is in a buyable pullback zone near 10/21 EMA.
+    Returns entry status: BUY_ZONE, EXTENDED, or WATCHLIST
+    """
+    if len(df) < 21:
+        return None
+
+    # Calculate EMAs
+    df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
+    df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+
+    current_price = df['Close'].iloc[-1]
+    ema_10 = df['EMA_10'].iloc[-1]
+    ema_21 = df['EMA_21'].iloc[-1]
+
+    # Calculate distance from EMAs
+    pct_above_ema_10 = ((current_price - ema_10) / ema_10) * 100
+    pct_above_ema_21 = ((current_price - ema_21) / ema_21) * 100
+
+    # Determine entry status
+    # BUY_ZONE: Price within 5% above either 10 or 21 EMA (pullback entry)
+    # EXTENDED: Price >10% above 21 EMA (chasing)
+    # WATCHLIST: In between
+    if pct_above_ema_10 <= EMA_PULLBACK_THRESHOLD or pct_above_ema_21 <= EMA_PULLBACK_THRESHOLD:
+        if pct_above_ema_10 >= -3 and pct_above_ema_21 >= -3:  # Not too deep below
+            entry_status = "BUY_ZONE"
+        else:
+            entry_status = "WATCHLIST"  # Too deep, might be breaking down
+    elif pct_above_ema_21 > EMA_EXTENDED_THRESHOLD:
+        entry_status = "EXTENDED"
+    else:
+        entry_status = "WATCHLIST"
+
+    return {
+        'ema_10': ema_10,
+        'ema_21': ema_21,
+        'pct_above_ema_10': pct_above_ema_10,
+        'pct_above_ema_21': pct_above_ema_21,
+        'entry_status': entry_status
+    }
+
+# ============================================================================
+# VOLUME ANALYSIS (NEW)
+# ============================================================================
+
+def analyze_volume(df):
+    """
+    Analyze volume patterns to validate breakouts.
+    Returns volume status: STRONG, WEAK, or NORMAL
+    """
+    if len(df) < 50:
+        return None
+
+    # 50-day average volume
+    avg_volume_50d = df['Volume'].tail(50).mean()
+
+    # Recent 5-day average volume
+    recent_volume = df['Volume'].tail(5).mean()
+
+    # Volume ratio
+    volume_ratio = recent_volume / avg_volume_50d if avg_volume_50d > 0 else 1.0
+
+    # Up/Down volume ratio (last 20 days)
+    recent_20 = df.tail(20).copy()
+    recent_20['Change'] = recent_20['Close'].diff()
+
+    up_days = recent_20[recent_20['Change'] > 0]
+    down_days = recent_20[recent_20['Change'] < 0]
+
+    avg_up_volume = up_days['Volume'].mean() if len(up_days) > 0 else 0
+    avg_down_volume = down_days['Volume'].mean() if len(down_days) > 0 else 1
+
+    up_down_ratio = avg_up_volume / avg_down_volume if avg_down_volume > 0 else 1.0
+
+    # Determine volume status
+    if volume_ratio >= VOLUME_STRONG_RATIO and up_down_ratio >= UP_DOWN_VOLUME_THRESHOLD:
+        volume_status = "STRONG"
+    elif volume_ratio < VOLUME_WEAK_RATIO or up_down_ratio < 0.8:
+        volume_status = "WEAK"
+    else:
+        volume_status = "NORMAL"
+
+    return {
+        'avg_volume_50d': avg_volume_50d,
+        'recent_volume': recent_volume,
+        'volume_ratio': volume_ratio,
+        'up_down_ratio': up_down_ratio,
+        'volume_status': volume_status
+    }
+
+# ============================================================================
+# EARNINGS DATE WARNING (NEW)
+# ============================================================================
+
+def get_earnings_warning(ticker):
+    """
+    Check upcoming earnings date and flag if within danger/caution zone.
+    Returns earnings info with warning flag.
+
+    Flags:
+    - DANGER: Earnings within 14 days
+    - CAUTION: Earnings within 45 days
+    - CLEAR: Earnings > 45 days away
+    - REPORTED: Last earnings date known, next not yet scheduled
+    - N/A: No earnings data (ETFs, funds, etc.)
+    """
+    try:
+        stock = yf.Ticker(ticker)
+
+        # Use stock.calendar which returns simple datetime.date objects
+        try:
+            calendar = stock.calendar
+            if calendar and 'Earnings Date' in calendar:
+                earnings_dates = calendar['Earnings Date']
+
+                # No earnings dates at all (ETFs, funds, etc.)
+                if not earnings_dates or len(earnings_dates) == 0:
+                    return {
+                        'next_earnings_date': None,
+                        'last_earnings_date': None,
+                        'days_until_earnings': None,
+                        'earnings_flag': "N/A"
+                    }
+
+                # Get the earnings date (first in list)
+                earnings_date = earnings_dates[0]
+                today = datetime.now().date()
+                days_until = (earnings_date - today).days
+
+                if days_until < 0:
+                    # Earnings already passed - show as last reported
+                    # Check if there's a future date in the list
+                    future_date = None
+                    for d in earnings_dates:
+                        if (d - today).days >= 0:
+                            future_date = d
+                            break
+
+                    if future_date:
+                        # Found a future date
+                        days_until = (future_date - today).days
+                        if days_until <= EARNINGS_DANGER_DAYS:
+                            earnings_flag = "DANGER"
+                        elif days_until <= EARNINGS_CAUTION_DAYS:
+                            earnings_flag = "CAUTION"
+                        else:
+                            earnings_flag = "CLEAR"
+                        return {
+                            'next_earnings_date': future_date.strftime('%Y-%m-%d'),
+                            'last_earnings_date': earnings_date.strftime('%Y-%m-%d'),
+                            'days_until_earnings': days_until,
+                            'earnings_flag': earnings_flag
+                        }
+                    else:
+                        # Only past date available - next earnings TBD
+                        return {
+                            'next_earnings_date': None,
+                            'last_earnings_date': earnings_date.strftime('%Y-%m-%d'),
+                            'days_until_earnings': None,
+                            'earnings_flag': "REPORTED"
+                        }
+
+                # Future earnings date
+                if days_until <= EARNINGS_DANGER_DAYS:
+                    earnings_flag = "DANGER"
+                elif days_until <= EARNINGS_CAUTION_DAYS:
+                    earnings_flag = "CAUTION"
+                else:
+                    earnings_flag = "CLEAR"
+
+                return {
+                    'next_earnings_date': earnings_date.strftime('%Y-%m-%d'),
+                    'last_earnings_date': None,
+                    'days_until_earnings': days_until,
+                    'earnings_flag': earnings_flag
+                }
+        except Exception:
+            pass  # Fall through to default
+
+        # Default if no earnings data available
+        return {
+            'next_earnings_date': None,
+            'last_earnings_date': None,
+            'days_until_earnings': None,
+            'earnings_flag': "N/A"
+        }
+
+    except Exception:
+        return {
+            'next_earnings_date': None,
+            'last_earnings_date': None,
+            'days_until_earnings': None,
+            'earnings_flag': "N/A"
+        }
+
+# ============================================================================
+# MARKET REGIME FILTER (NEW)
+# ============================================================================
+
+def analyze_market_regime(spy_data):
+    """
+    Analyze SPY to determine overall market health.
+    Returns regime: BULLISH, CAUTIOUS, or BEARISH
+    """
+    if len(spy_data) < 200:
+        return {
+            'spy_price': None,
+            'spy_ma_50': None,
+            'spy_ma_200': None,
+            'regime': "UNKNOWN",
+            'regime_warning': True
+        }
+
+    # Calculate MAs
+    spy_ma_50 = spy_data['Close'].rolling(window=50).mean().iloc[-1]
+    spy_ma_200 = spy_data['Close'].rolling(window=200).mean().iloc[-1]
+    spy_price = spy_data['Close'].iloc[-1]
+
+    # Determine regime
+    if spy_price > spy_ma_50 and spy_ma_50 > spy_ma_200:
+        regime = "BULLISH"
+        regime_warning = False
+    elif spy_price > spy_ma_200:
+        regime = "CAUTIOUS"
+        regime_warning = True
+    else:
+        regime = "BEARISH"
+        regime_warning = True
+
+    return {
+        'spy_price': spy_price,
+        'spy_ma_50': spy_ma_50,
+        'spy_ma_200': spy_ma_200,
+        'regime': regime,
+        'regime_warning': regime_warning
+    }
+
+# ============================================================================
+# SECTOR TRACKING (NEW)
+# ============================================================================
+
+def get_sector(ticker):
+    """
+    Get sector for a stock from yfinance.
+    Returns sector string or 'Unknown'.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return info.get('sector', 'Unknown')
+    except Exception:
+        return 'Unknown'
+
+def format_earnings_display(earn_data):
+    """
+    Format earnings data for display in reports.
+    Returns a string like: "35d", "12d [!]", "Rpt:10/22", "N/A"
+    """
+    if not earn_data:
+        return "N/A"
+
+    flag = earn_data.get('earnings_flag', 'N/A')
+    days = earn_data.get('days_until_earnings')
+    last_date = earn_data.get('last_earnings_date')
+
+    if flag == "N/A":
+        return "N/A"
+    elif flag == "REPORTED":
+        # Show last earnings date in MM/DD format
+        if last_date:
+            try:
+                from datetime import datetime as dt
+                d = dt.strptime(last_date, '%Y-%m-%d')
+                return f"Rpt:{d.month}/{d.day}"
+            except:
+                return "Rpt:--"
+        return "Rpt:--"
+    elif flag == "DANGER":
+        return f"{days}d [!]"
+    elif days is not None:
+        return f"{days}d"
+    else:
+        return flag
+
+def calculate_sector_concentration(results):
+    """
+    Calculate sector breakdown and flag concentration issues.
+    Returns dict with sector counts and warnings.
+    """
+    sector_counts = {}
+    total = len(results)
+
+    for r in results:
+        sector = r.get('sector', 'Unknown')
+        sector_counts[sector] = sector_counts.get(sector, 0) + 1
+
+    # Calculate percentages and flag concentration
+    sector_breakdown = {}
+    concentrated_sectors = []
+
+    for sector, count in sorted(sector_counts.items(), key=lambda x: x[1], reverse=True):
+        pct = (count / total * 100) if total > 0 else 0
+        sector_breakdown[sector] = {
+            'count': count,
+            'percentage': pct,
+            'concentrated': pct > MAX_SECTOR_CONCENTRATION
+        }
+        if pct > MAX_SECTOR_CONCENTRATION:
+            concentrated_sectors.append(sector)
+
+    return {
+        'breakdown': sector_breakdown,
+        'concentrated_sectors': concentrated_sectors,
+        'has_concentration_warning': len(concentrated_sectors) > 0
+    }
+
+# ============================================================================
 # STEP 2: FUNDAMENTAL SCREENING (SEPA)
 # ============================================================================
 
@@ -661,6 +998,16 @@ def main():
         print(f"ERROR: Exception while fetching SPY data: {e}")
         return
 
+    # Analyze market regime (NEW)
+    market_regime = analyze_market_regime(spy_data)
+    print(f"MARKET REGIME: {market_regime['regime']}")
+    if market_regime['spy_price']:
+        print(f"  SPY: ${market_regime['spy_price']:.2f} | 50 MA: ${market_regime['spy_ma_50']:.2f} | 200 MA: ${market_regime['spy_ma_200']:.2f}")
+    if market_regime['regime_warning']:
+        print(f"  [!] WARNING: Market conditions not optimal for new positions\n")
+    else:
+        print(f"  Market healthy - full position sizes OK\n")
+
     # Calculate RS for all stocks
     print(f"Calculating RS ratings for {len(stock_list)} stocks...\n")
     rs_results = []
@@ -793,129 +1140,166 @@ def main():
         grade_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
         for r in sepa_qualified:
             grade_counts[r['grade']] += 1
-        print(f"  • Quality Grades: A={grade_counts['A']}, B={grade_counts['B']}, C={grade_counts['C']}, D={grade_counts['D']}")
-
-        # Display SEPA qualified stocks
-        if sepa_qualified:
-            print("\n" + "=" * 100)
-            print("SEPA QUALIFIED STOCKS - RANKED BY QUALITY SCORE")
-            print("(Based on 18-month backtest: Distance from high, RS sweet spot, Earnings growth)")
-            print("=" * 100)
-
-            for result in sepa_qualified:
-                ticker = result['ticker']
-                a = result['analysis']
-                f = result['fundamentals']
-                score = result['quality_score']
-                grade = result['grade']
-
-                # Grade emoji
-                grade_emoji = {'A': '🅰️', 'B': '🅱️', 'C': '©️', 'D': '🔸'}.get(grade, '')
-
-                print(f"\n{'━' * 100}")
-                print(f"{grade_emoji} GRADE {grade} | {ticker} | Score: {score}/100 | RS: {a['rs_rating']}")
-                print(f"{'━' * 100}")
-                print(f"Price: ${a['current_price']:.2f}  |  {a['pct_from_52w_high']:.1f}% from 52w high")
-                print(f"\nFundamentals:")
-                print(f"  • Earnings Growth (YoY): {f['recent_earnings_growth']:.1f}%" if f['recent_earnings_growth'] else "  • Earnings Growth: N/A")
-                print(f"  • Revenue Growth (YoY): {f['recent_revenue_growth']:.1f}%" if f['recent_revenue_growth'] else "  • Revenue Growth: N/A")
-                print(f"  • Earnings Acceleration: {f['earnings_acceleration_quarters']}/4 quarters")
-                print(f"  • Revenue Acceleration: {f['revenue_acceleration_quarters']}/4 quarters")
-                print(f"  • ATR (Volatility): {f['atr_percent']:.1f}%" if f['atr_percent'] else "  • ATR: N/A")
-                print(f"  • Net Margin: {f['current_margin']*100:.1f}%" if f['current_margin'] else "  • Net Margin: N/A")
+        print(f"  Quality Grades: A={grade_counts['A']}, B={grade_counts['B']}, C={grade_counts['C']}, D={grade_counts['D']}")
 
         stage_2_stocks = sepa_results  # Update to include fundamental data
 
     # ========================================================================
-    # Display All Stage 2 Results
+    # STEP 4: ENHANCED ANALYSIS (Entry Timing, Volume, Earnings, Sector)
     # ========================================================================
-    print("\n" + "=" * 100)
-    print("ALL STAGE 2 STOCKS (With Quality Scores)" if ENABLE_STEP2 else "ALL STAGE 2 STOCKS")
-    print("=" * 100)
+    if ENABLE_STEP2 and 'sepa_qualified' in locals() and len(sepa_qualified) > 0:
+        print("\n" + "-" * 100)
+        print("STEP 4: ENHANCED ANALYSIS (Entry, Volume, Earnings, Sector)")
+        print("-" * 100)
+        print(f"\nAnalyzing {len(sepa_qualified)} SEPA qualified stocks for entry timing...\n")
 
-    if stage_2_stocks:
-        # Sort by quality score if available, otherwise by RS rating
-        stage_2_stocks.sort(
-            key=lambda x: (x.get('quality_score', 0), x['analysis']['rs_rating']),
-            reverse=True
-        )
-
-        for result in stage_2_stocks:
+        for i, result in enumerate(sepa_qualified, 1):
             ticker = result['ticker']
-            a = result['analysis']
+            print(f"[{i}/{len(sepa_qualified)}] {ticker}...", end=" ")
 
-            sepa_status = ""
-            if ENABLE_STEP2 and 'fundamentals' in result:
-                f = result['fundamentals']
-                if f['passes_step2']:
-                    grade = result.get('grade', '?')
-                    score = result.get('quality_score', 0)
-                    sepa_status = f" | Grade {grade} ({score}pts)"
-                else:
-                    sepa_status = f" | Failed: {f['failed_criteria'][0][:30]}"
+            # Get fresh price data for entry/volume analysis
+            try:
+                stock = yf.Ticker(ticker)
+                df = stock.history(period="3mo")
 
-            print(f"  {ticker:6} RS {a['rs_rating']:2} | ${a['current_price']:8.2f} | "
-                  f"{a['pct_from_52w_high']:4.1f}% from high{sepa_status}")
+                # Entry timing analysis
+                entry_data = analyze_entry_timing(df)
+                if entry_data:
+                    result['entry'] = entry_data
+
+                # Volume analysis
+                volume_data = analyze_volume(df)
+                if volume_data:
+                    result['volume'] = volume_data
+
+                # Earnings warning
+                earnings_data = get_earnings_warning(ticker)
+                result['earnings'] = earnings_data
+
+                # Sector
+                sector = get_sector(ticker)
+                result['sector'] = sector
+
+                # Print status
+                entry_status = entry_data['entry_status'] if entry_data else "N/A"
+                vol_status = volume_data['volume_status'] if volume_data else "N/A"
+                earn_flag = earnings_data['earnings_flag']
+                print(f"{entry_status} | Vol:{vol_status} | Earn:{earn_flag} | {sector}")
+
+            except Exception as e:
+                print(f"Error: {e}")
+                result['entry'] = None
+                result['volume'] = None
+                result['earnings'] = {'earnings_flag': 'UNKNOWN', 'days_until_earnings': None, 'next_earnings_date': None}
+                result['sector'] = 'Unknown'
+
+        # Calculate sector concentration
+        sector_analysis = calculate_sector_concentration(sepa_qualified)
+
+        print(f"\n✓ Enhanced Analysis Complete")
 
     # ========================================================================
-    # Show all stocks by stage
+    # CLEAN REPORT OUTPUT (NEW FORMAT)
     # ========================================================================
-    print("\n" + "=" * 100)
-    print("ALL HIGH-RS STOCKS BY STAGE")
+    print("\n")
+    print("=" * 100)
+    print(f"SUPERPERFORM SEPA ANALYSIS - {datetime.now().strftime('%Y-%m-%d')}")
     print("=" * 100)
 
-    stage_names = {
-        1: "STAGE 1 - Consolidation/Neglect Phase",
-        2: "STAGE 2 - Advancing Phase ⭐ BUYABLE",
-        3: "STAGE 3 - Topping/Distribution Phase",
-        4: "STAGE 4 - Declining Phase"
-    }
+    # Market Status Header
+    print(f"\nMARKET STATUS: {market_regime['regime']}")
+    if market_regime['spy_price']:
+        above_50 = "Above" if market_regime['spy_price'] > market_regime['spy_ma_50'] else "Below"
+        above_200 = "Above" if market_regime['spy_price'] > market_regime['spy_ma_200'] else "Below"
+        print(f"  SPY: ${market_regime['spy_price']:.2f} | {above_50} 50 MA (${market_regime['spy_ma_50']:.2f}) | {above_200} 200 MA (${market_regime['spy_ma_200']:.2f})")
+    if market_regime['regime'] == "BULLISH":
+        print("  Recommendation: Full position sizes OK")
+    elif market_regime['regime'] == "CAUTIOUS":
+        print("  Recommendation: Reduce position sizes, be selective")
+    else:
+        print("  Recommendation: Cash preferred, avoid new longs")
 
-    for stage_num in [2, 1, 3, 4]:
-        stocks_in_stage = [r for r in stage_results if r['analysis']['stage'] == stage_num]
+    # TOP PICKS Section - Grade A/B, BUY_ZONE, no earnings danger
+    if ENABLE_STEP2 and 'sepa_qualified' in locals() and len(sepa_qualified) > 0:
+        top_picks = [r for r in sepa_qualified if
+                     r.get('grade') in ['A', 'B'] and
+                     r.get('entry', {}).get('entry_status') == 'BUY_ZONE' and
+                     r.get('earnings', {}).get('earnings_flag') != 'DANGER']
 
-        if stocks_in_stage:
-            print(f"\n{stage_names[stage_num]}")
+        if top_picks:
+            print("\n" + "-" * 100)
+            print("TOP PICKS - Ready to Buy (Grade A/B, Buy Zone, Earnings Clear)")
             print("-" * 100)
+            print(f"  {'TICKER':<8} {'GRADE':<6} {'RS':<4} {'PRICE':<10} {'ENTRY':<10} {'VOLUME':<8} {'EARNINGS':<10} {'SECTOR':<15}")
+            print(f"  {'-'*8} {'-'*6} {'-'*4} {'-'*10} {'-'*10} {'-'*8} {'-'*10} {'-'*15}")
 
-            stocks_in_stage.sort(key=lambda x: x['analysis']['rs_rating'], reverse=True)
+            for r in top_picks:
+                ticker = r['ticker']
+                grade = r.get('grade', '?')
+                rs = r['analysis']['rs_rating']
+                price = r['analysis']['current_price']
+                entry = r.get('entry', {}).get('entry_status', 'N/A')
+                volume = r.get('volume', {}).get('volume_status', 'N/A')
+                earn = r.get('earnings', {})
+                earn_str = format_earnings_display(earn)
+                sector = r.get('sector', 'Unknown')[:15]
 
-            for result in stocks_in_stage:
-                ticker = result['ticker']
-                a = result['analysis']
+                print(f"  {ticker:<8} {grade:<6} {rs:<4} ${price:<9.2f} {entry:<10} {volume:<8} {earn_str:<10} {sector:<15}")
 
-                failed = [k for k, v in a['criteria'].items() if not v]
-                criteria_str = "ALL 9 ✓" if not failed else f"({9 - len(failed)}/9)"
+        # WATCHLIST Section - Extended or earnings soon
+        watchlist = [r for r in sepa_qualified if r not in top_picks]
 
-                print(f"  {ticker:6} - RS {a['rs_rating']:2} | ${a['current_price']:8.2f} | "
-                      f"{a['pct_above_52w_low']:5.0f}% from low | "
-                      f"{a['pct_from_52w_high']:4.0f}% from high | {criteria_str}")
+        if watchlist:
+            print("\n" + "-" * 100)
+            print("WATCHLIST - Wait for Pullback or Earnings to Pass")
+            print("-" * 100)
+            print(f"  {'TICKER':<8} {'GRADE':<6} {'RS':<4} {'PRICE':<10} {'ENTRY':<10} {'VOLUME':<8} {'EARNINGS':<10} {'SECTOR':<15}")
+            print(f"  {'-'*8} {'-'*6} {'-'*4} {'-'*10} {'-'*10} {'-'*8} {'-'*10} {'-'*15}")
 
-                if failed:
-                    print(f"         Failed: {', '.join([c.split('.')[1].strip() for c in failed[:2]])}")
+            for r in watchlist:
+                ticker = r['ticker']
+                grade = r.get('grade', '?')
+                rs = r['analysis']['rs_rating']
+                price = r['analysis']['current_price']
+                entry = r.get('entry', {}).get('entry_status', 'N/A')
+                volume = r.get('volume', {}).get('volume_status', 'N/A')
+                earn = r.get('earnings', {})
+                earn_str = format_earnings_display(earn)
+                sector = r.get('sector', 'Unknown')[:15]
 
-    # ========================================================================
-    # Summary
-    # ========================================================================
-    print("\n" + "=" * 100)
+                print(f"  {ticker:<8} {grade:<6} {rs:<4} ${price:<9.2f} {entry:<10} {volume:<8} {earn_str:<10} {sector:<15}")
+
+        # Sector Concentration
+        if 'sector_analysis' in locals():
+            print("\n" + "-" * 100)
+            print("SECTOR CONCENTRATION")
+            print("-" * 100)
+            for sector, data in sector_analysis['breakdown'].items():
+                warn = " [!CONCENTRATED]" if data['concentrated'] else ""
+                print(f"  {sector:<20} {data['percentage']:>5.1f}% ({data['count']} stocks){warn}")
+
+    # Summary Stats
+    print("\n" + "-" * 100)
     print("SUMMARY")
-    print("=" * 100)
+    print("-" * 100)
 
     stage_counts = {}
     for r in stage_results:
         stage = r['analysis']['stage']
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
 
-    print(f"\n🎯 Stage 2 (Buyable):       {stage_counts.get(2, 0)} stocks")
+    print(f"  Stage 2 (Buyable):       {stage_counts.get(2, 0)} stocks")
 
     if ENABLE_STEP2 and 'sepa_qualified' in locals():
-        print(f"🏆 SEPA Qualified:          {len(sepa_qualified)} stocks (after fundamental screening)")
+        print(f"  SEPA Qualified:          {len(sepa_qualified)} stocks")
+        if 'top_picks' in locals():
+            print(f"  Top Picks (actionable):  {len(top_picks)} stocks")
 
-    print(f"○  Stage 1 (Consolidation): {stage_counts.get(1, 0)} stocks")
-    print(f"⚠  Stage 3 (Topping):       {stage_counts.get(3, 0)} stocks")
-    print(f"✗  Stage 4 (Declining):     {stage_counts.get(4, 0)} stocks")
-    print(f"\nTotal with RS >= {MIN_RS_RATING}:      {len(stage_results)} stocks")
-    print(f"Total analyzed:             {len(stock_list)} stocks")
+    print(f"  Stage 1 (Consolidation): {stage_counts.get(1, 0)} stocks")
+    print(f"  Stage 3 (Topping):       {stage_counts.get(3, 0)} stocks")
+    print(f"  Stage 4 (Declining):     {stage_counts.get(4, 0)} stocks")
+    print(f"\n  Total with RS >= {MIN_RS_RATING}:    {len(stage_results)} stocks")
+    print(f"  Total analyzed:          {len(stock_list)} stocks")
 
     # ========================================================================
     # Save to CSV
@@ -963,6 +1347,35 @@ def main():
                 'SEPA_Failed_Criteria': ', '.join(f['failed_criteria']) if f['failed_criteria'] else None
             })
 
+        # Add enhanced analysis data (NEW)
+        if 'entry' in r and r['entry']:
+            row_data.update({
+                'Entry_Status': r['entry']['entry_status'],
+                'EMA_10': r['entry']['ema_10'],
+                'EMA_21': r['entry']['ema_21'],
+                'Pct_Above_EMA_10': r['entry']['pct_above_ema_10'],
+                'Pct_Above_EMA_21': r['entry']['pct_above_ema_21']
+            })
+
+        if 'volume' in r and r['volume']:
+            row_data.update({
+                'Volume_Status': r['volume']['volume_status'],
+                'Volume_Ratio': r['volume']['volume_ratio'],
+                'Up_Down_Volume_Ratio': r['volume']['up_down_ratio'],
+                'Avg_Volume_50d': r['volume']['avg_volume_50d']
+            })
+
+        if 'earnings' in r and r['earnings']:
+            row_data.update({
+                'Earnings_Flag': r['earnings']['earnings_flag'],
+                'Days_Until_Earnings': r['earnings']['days_until_earnings'],
+                'Next_Earnings_Date': r['earnings']['next_earnings_date'],
+                'Last_Earnings_Date': r['earnings'].get('last_earnings_date')
+            })
+
+        if 'sector' in r:
+            row_data['Sector'] = r['sector']
+
         csv_data.append(row_data)
 
     df_output = pd.DataFrame(csv_data)
@@ -981,7 +1394,17 @@ def main():
         df_sepa.to_csv(sepa_filename, index=False)
         print(f"✓ SEPA qualified stocks saved to: {sepa_filename}")
 
+        # Save top picks separately (NEW)
+        if 'top_picks' in locals() and len(top_picks) > 0:
+            top_picks_tickers = [r['ticker'] for r in top_picks]
+            df_top = df_sepa[df_sepa['Ticker'].isin(top_picks_tickers)]
+            top_filename = f"top_picks_{timestamp}.csv"
+            df_top.to_csv(top_filename, index=False)
+            print(f"✓ Top picks saved to: {top_filename}")
+
     print("\n" + "=" * 100)
+    print(f"Market Regime: {market_regime['regime']} | Analysis complete.")
+    print("=" * 100)
 
 if __name__ == "__main__":
     main()
