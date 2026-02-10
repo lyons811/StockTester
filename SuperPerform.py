@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 SuperPerform - Complete Minervini SEPA Analysis
 Step 1: IBD RS Rating + Stage 2 Trend Template
@@ -7,10 +8,9 @@ Step 2: Fundamental Screening (Earnings/Sales Acceleration, Margins, Volatility)
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import warnings
 import json
-import os
 import re
 from pathlib import Path
 import time
@@ -20,10 +20,35 @@ try:
     from bs4 import BeautifulSoup
     HAS_WEB_SCRAPING = True
 except ImportError:
+    requests = None
+    BeautifulSoup = None
     HAS_WEB_SCRAPING = False
     print("WARNING: requests or beautifulsoup4 not installed. Install with: pip install requests beautifulsoup4")
 
 warnings.filterwarnings('ignore')
+
+# Lightweight caches to reduce repeated API calls
+_TICKER_CACHE = {}
+_HISTORY_CACHE = {}
+
+
+def get_ticker_obj(ticker):
+    """Get cached yfinance Ticker object."""
+    ticker = ticker.upper().strip()
+    if ticker not in _TICKER_CACHE:
+        _TICKER_CACHE[ticker] = yf.Ticker(ticker)
+    return _TICKER_CACHE[ticker]
+
+
+def get_price_history(ticker, period="1y"):
+    """Get cached price history and return a copy for safe mutation."""
+    ticker = ticker.upper().strip()
+    key = (ticker, period)
+    if key not in _HISTORY_CACHE:
+        stock = get_ticker_obj(ticker)
+        history = stock.history(period=period)
+        _HISTORY_CACHE[key] = history if history is not None else pd.DataFrame()
+    return _HISTORY_CACHE[key].copy()
 
 # ============================================================================
 # CONFIGURATION - Edit this section to customize
@@ -44,6 +69,10 @@ MIN_RS_RATING = 80          # Raised from 70 (backtest shows 80+ has cleaner sig
 MAX_RS_RATING = 94          # RS 95+ often overextended (56.7% win vs 67% for 80-94)
 MIN_TRADING_DAYS = 240      # Minimum days of data required (240 ≈ 9.5 months)
 MAX_PCT_FROM_HIGH = 10      # Tightened from 25% (69% win at 0-10% vs 45% at 15%+)
+MAX_PCT_ABOVE_50MA = 20.0   # Avoid climactic names too far above intermediate trend
+MAX_DAYS_SINCE_52W_HIGH = 126   # 6 months; stale highs are lower quality
+MIN_50MA_SLOPE_PCT = 0.0    # 50-day MA should be rising for valid Stage 2 trends
+MAX_150MA_ROLLOVER_PCT = 1.0    # 150-day MA can be flat/slightly down, not rolling over hard
 
 # Step 2 Thresholds (SEPA Fundamental Screening)
 ENABLE_STEP2 = True         # Set False to skip fundamental screening
@@ -52,6 +81,11 @@ MIN_EARNINGS_GROWTH = 15.0      # Minimum YoY earnings growth % (recent quarter)
 MIN_SALES_GROWTH = 10.0         # Minimum YoY sales growth % (recent quarter)
 REQUIRE_MARGIN_EXPANSION = True # Must show margin expansion over 8 quarters
 MAX_ATR_PERCENT = 6.0           # Maximum ATR as % of price (lower = smoother trend)
+ACCELERATION_MIN_DELTA = 1.5    # Min QoQ improvement in YoY growth series to count acceleration
+MIN_YOY_QUARTERS = 5            # Most feeds provide ~4-6 quarters reliably
+MIN_YOY_ACCEL_POINTS = 1        # Allow recent IPOs / sparse feeds; use adaptive acceleration check
+MIN_POSITIVE_GROWTH_QUARTERS = 1    # Require at least 1 positive YoY quarter (latest 4)
+MAX_EARNINGS_SIGN_FLIPS = 2     # Allow some cyclicality; still filter unstable earnings histories
 
 # Entry Timing Thresholds (NEW)
 EMA_PULLBACK_THRESHOLD = 5.0    # Within 5% of EMA = buy zone
@@ -71,7 +105,7 @@ MAX_SECTOR_CONCENTRATION = 40   # Warn if >40% of picks in one sector
 
 # Finviz Scraper Settings
 USE_FINVIZ_SCRAPER = True   # Set False to use hardcoded STOCK_LIST instead
-MAX_PAGES = 4               # Number of Finviz pages to scrape (1 page ≈ 20 stocks)
+MAX_PAGES = 5               # Number of Finviz pages to scrape (v=411: ~1000 stocks/page)
 CACHE_HOURS = 24            # Hours to cache Finviz results before re-scraping
 
 # ============================================================================
@@ -83,7 +117,7 @@ def scrape_finviz_screener(max_pages=MAX_PAGES):
     Scrape stock tickers from Finviz screener
     URL criteria: 30%+ above 52w low, Price above 200 MA, 50 MA above 200 MA
     """
-    if not HAS_WEB_SCRAPING:
+    if not HAS_WEB_SCRAPING or requests is None or BeautifulSoup is None:
         print("ERROR: Cannot scrape Finviz without requests and beautifulsoup4")
         print("Install with: pip install requests beautifulsoup4")
         return None
@@ -99,15 +133,14 @@ def scrape_finviz_screener(max_pages=MAX_PAGES):
 
     print(f"Scraping Finviz screener (max {max_pages} pages)...")
 
+    detected_total = None
+    detected_pages = None
+    warned_page_limit = False
+
     for page in range(max_pages):
-        # Finviz pagination: r=1 (page 1), r=1001 (page 2), r=2001 (page 3), etc.
-        # Actually it's r=1, r=21, r=41... for 20 results per page
-        # But the user's URLs show r=1001, r=2001, suggesting different pagination
-        # Let me use the pattern from user's example: r increases by 1000
-        if page == 0:
-            url = base_url
-        else:
-            url = f"{base_url}&r={page * 1000 + 1}"
+        # Finviz v=411 pagination uses r=1,1001,2001,...
+        start_row = page * 1000 + 1
+        url = base_url if start_row == 1 else f"{base_url}&r={start_row}"
 
         try:
             print(f"  Fetching page {page + 1}...", end=" ")
@@ -116,44 +149,70 @@ def scrape_finviz_screener(max_pages=MAX_PAGES):
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Find the screener_tickers table cell
-            ticker_cells = soup.find_all('td', class_='screener_tickers')
+            page_tickers = []
 
-            if not ticker_cells:
+            # Primary parser: current Finviz screener layout
+            for link in soup.select('a.screener-link-primary'):
+                ticker = link.get_text(strip=True).upper()
+                if re.fullmatch(r"[A-Z][A-Z0-9.\-]*", ticker):
+                    page_tickers.append(ticker)
+
+            # Detect total result count from page header, e.g. "#1 / 4224 Total"
+            if detected_total is None:
+                text_snapshot = soup.get_text(" ", strip=True)
+                total_match = re.search(r"#\s*1\s*/\s*([\d,]+)\s+Total", text_snapshot)
+                if total_match:
+                    detected_total = int(total_match.group(1).replace(',', ''))
+                    detected_pages = max(1, int(np.ceil(detected_total / 1000)))
+                    print(f"(detected total: {detected_total}, approx pages: {detected_pages})", end=" ")
+
+            # Fallback parser for older/alternate Finviz markup
+            if not page_tickers:
+                ticker_cells = soup.find_all('td', class_='screener_tickers')
+                for cell in ticker_cells:
+                    spans = cell.find_all('span')
+                    for span in spans:
+                        onclick = span.get('onclick')
+                        onclick_str = str(onclick) if onclick is not None else ""
+                        if 'quote.ashx?t=' in onclick_str:
+                            match = re.search(r"t=([A-Z][A-Z0-9.\-]*)", onclick_str)
+                            if match:
+                                page_tickers.append(match.group(1))
+
+            # Deduplicate while preserving order
+            page_tickers = list(dict.fromkeys(page_tickers))
+            if not page_tickers:
                 print(f"No more results (page {page + 1})")
                 break
 
-            # Extract ticker symbols from spans
-            page_tickers = []
-            for cell in ticker_cells:
-                spans = cell.find_all('span')
-                for span in spans:
-                    # Extract ticker from onclick attribute or text content
-                    onclick = span.get('onclick', '')
-                    if 'quote.ashx?t=' in onclick:
-                        # Extract ticker from: window.location='quote.ashx?t=TXT&...
-                        match = re.search(r"t=([A-Z]+)", onclick)
-                        if match:
-                            ticker = match.group(1)
-                            if ticker not in page_tickers:
-                                page_tickers.append(ticker)
+            new_count = 0
+            for ticker in page_tickers:
+                if ticker not in tickers:
+                    tickers.append(ticker)
+                    new_count += 1
 
-            tickers.extend(page_tickers)
-            print(f"✓ Found {len(page_tickers)} tickers (total: {len(tickers)})")
+            print(f"✓ Found {new_count} new tickers (total: {len(tickers)})")
+
+            if detected_pages and (page + 1) >= detected_pages:
+                break
+
+            if detected_pages and max_pages < detected_pages and not warned_page_limit:
+                print(f"  [!] max_pages={max_pages} < detected pages={detected_pages}; increase MAX_PAGES for full coverage")
+                warned_page_limit = True
 
             # Be nice to Finviz - add small delay between pages
             if page < max_pages - 1:
                 time.sleep(1)
 
-        except requests.exceptions.RequestException as e:
-            print(f"✗ Error fetching page {page + 1}: {e}")
-            if page == 0:
-                # If first page fails, this is a critical error
-                return None
-            else:
+        except Exception as e:
+            if requests is not None and isinstance(e, requests.exceptions.RequestException):
+                print(f"✗ Error fetching page {page + 1}: {e}")
+                if page == 0:
+                    # If first page fails, this is a critical error
+                    return None
                 # If later pages fail, just stop pagination
                 break
-        except Exception as e:
+
             print(f"✗ Error parsing page {page + 1}: {e}")
             break
 
@@ -174,7 +233,7 @@ def get_stock_list():
     # If not using scraper, return hardcoded list
     if not USE_FINVIZ_SCRAPER:
         print("Using hardcoded STOCK_LIST")
-        return STOCK_LIST
+        return list(dict.fromkeys([t.upper().strip() for t in STOCK_LIST if isinstance(t, str) and t.strip()]))
 
     # Check cache
     if cache_file.exists():
@@ -188,9 +247,17 @@ def get_stock_list():
 
             if cache_age_hours < CACHE_HOURS:
                 tickers = cache_data['tickers']
-                print(f"Using cached Finviz tickers ({len(tickers)} stocks)")
-                print(f"  Cache age: {cache_age_hours:.1f} hours (expires in {CACHE_HOURS - cache_age_hours:.1f} hours)")
-                return tickers
+                tickers = list(dict.fromkeys([t.upper().strip() for t in tickers if isinstance(t, str) and t.strip()]))
+
+                cache_max_pages = cache_data.get('max_pages', MAX_PAGES)
+                cache_parser_version = cache_data.get('parser_version', 1)
+                expected_upper_bound = int(max(cache_max_pages, 1) * 1200)
+                if cache_parser_version >= 2 and len(tickers) <= expected_upper_bound:
+                    print(f"Using cached Finviz tickers ({len(tickers)} stocks)")
+                    print(f"  Cache age: {cache_age_hours:.1f} hours (expires in {CACHE_HOURS - cache_age_hours:.1f} hours)")
+                    return tickers
+
+                print(f"Cached ticker set looks stale/inconsistent (count={len(tickers)}, parser_v={cache_parser_version}); refreshing cache.")
             else:
                 print(f"Cache expired ({cache_age_hours:.1f} hours old)")
         except Exception as e:
@@ -203,7 +270,7 @@ def get_stock_list():
     if tickers is None:
         print("ERROR: Failed to scrape Finviz screener")
         print("Make sure you have internet connection and Finviz is accessible")
-        exit(1)
+        raise RuntimeError("Failed to fetch stock list from Finviz")
 
     # Save to cache
     try:
@@ -212,7 +279,8 @@ def get_stock_list():
             'timestamp': datetime.now().isoformat(),
             'tickers': tickers,
             'source': 'finviz_screener',
-            'max_pages': MAX_PAGES
+            'max_pages': MAX_PAGES,
+            'parser_version': 2
         }
         with open(cache_file, 'w') as f:
             json.dump(cache_data, f, indent=2)
@@ -220,7 +288,7 @@ def get_stock_list():
     except Exception as e:
         print(f"Warning: Could not save cache: {e}")
 
-    return tickers
+    return list(dict.fromkeys([t.upper().strip() for t in tickers if isinstance(t, str) and t.strip()]))
 
 # ============================================================================
 # RS CALCULATION FUNCTIONS
@@ -232,8 +300,7 @@ def calculate_ibd_rs(ticker, spy_data):
     Formula: 0.4*(3mo) + 0.2*(6mo) + 0.2*(9mo) + 0.2*(12mo)
     """
     try:
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="1y")
+        df = get_price_history(ticker, period="1y")
 
         if len(df) < MIN_TRADING_DAYS:
             return None, f"Insufficient data ({len(df)} days, need {MIN_TRADING_DAYS}+)"
@@ -290,24 +357,55 @@ def calculate_ma_slope(ma_values, lookback=20):
     """Calculate if MA is trending up"""
     if len(ma_values) < lookback:
         return None
-    recent_avg = ma_values[-5:].mean()
-    older_avg = ma_values[-lookback:-15].mean()
+
+    recent_window = ma_values.iloc[-5:]
+    older_window = ma_values.iloc[-lookback:-15]
+    if len(older_window) == 0:
+        return None
+
+    recent_avg = recent_window.mean()
+    older_avg = older_window.mean()
+    if pd.isna(recent_avg) or pd.isna(older_avg) or older_avg == 0:
+        return None
+
     return (recent_avg - older_avg) / older_avg * 100
 
-def determine_stage(df, price, ma_50, ma_150, ma_200, criteria):
-    """Determine market stage based on price action and MA relationships"""
+def determine_stage(price, ma_50, ma_150, ma_200, ma_50_slope, ma_150_slope, ma_200_slope, pct_from_52w_high, criteria):
+    """Determine market stage based on trend structure and momentum."""
     if all(criteria.values()):
         return 2
 
-    if price < ma_200 and not criteria['3. 200 MA trending up']:
+    # Stage 4: clear long-term downtrend / deterioration
+    if (
+        price < ma_200 and
+        ma_50 < ma_150 and
+        ma_150 <= ma_200 and
+        (ma_200_slope is None or ma_200_slope <= 0)
+    ):
         return 4
 
-    if price > ma_200 and criteria['3. 200 MA trending up']:
-        if ma_50 < ma_200:
-            return 1
-        else:
-            return 3
+    # Stage 3: above long-term MA but intermediate trend is rolling over
+    if (
+        price > ma_200 and
+        (
+            price < ma_50 or
+            (ma_50_slope is not None and ma_50_slope <= 0) or
+            ((ma_150_slope is not None and ma_150_slope <= 0) and pct_from_52w_high > MAX_PCT_FROM_HIGH)
+        )
+    ):
+        return 3
 
+    # Stage 2 candidate: structural uptrend even if strict template not fully met
+    if (
+        price > ma_200 and
+        ma_50 > ma_200 and
+        ma_150 > ma_200 and
+        (ma_200_slope is not None and ma_200_slope > 0) and
+        (ma_50_slope is not None and ma_50_slope > 0)
+    ):
+        return 2
+
+    # Otherwise treat as Stage 1 (base-building / transition)
     return 1
 
 def analyze_stage(ticker, rs_rating):
@@ -316,8 +414,7 @@ def analyze_stage(ticker, rs_rating):
     Returns stage number and detailed criteria breakdown
     """
     try:
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="1y")
+        df = get_price_history(ticker, period="1y")
 
         if len(df) < 200:
             return None, "Insufficient data for MA calculation"
@@ -338,39 +435,66 @@ def analyze_stage(ticker, rs_rating):
         week_52_low = df['Low'].min()
 
         # Calculate MA slope
+        ma_50_slope = calculate_ma_slope(df['MA_50'].dropna())
+        ma_150_slope = calculate_ma_slope(df['MA_150'].dropna())
         ma_200_slope = calculate_ma_slope(df['MA_200'].dropna())
 
-        # Stage 2 Trend Template - All 9 criteria (optimized from backtest)
+        # Additional trend-quality metrics for false-positive reduction
+        pct_above_ma_50 = ((current_price - ma_50) / ma_50 * 100) if ma_50 else None
+        high_values = df['High'].values
+        high_positions = np.where(high_values == week_52_high)[0]
+        days_since_52w_high = int(len(df) - 1 - high_positions[-1]) if len(high_positions) > 0 else None
+
+        pct_above_52w_low = ((current_price - week_52_low) / week_52_low * 100)
+        pct_from_52w_high = ((week_52_high - current_price) / week_52_high * 100)
+
+        # Stage 2 Trend Template - core + quality criteria
         criteria = {
             '1. Price > 150 & 200 MA': current_price > ma_150 and current_price > ma_200,
             '2. 150 MA > 200 MA': ma_150 > ma_200,
             '3. 200 MA trending up': ma_200_slope is not None and ma_200_slope > 0,
             '4. 50 MA > 150 & 200 MA': ma_50 > ma_150 and ma_50 > ma_200,
             '5. Price > 50 MA': current_price > ma_50,
-            '6. Price 30%+ above 52w low': ((current_price - week_52_low) / week_52_low * 100) >= 30,
-            '7. Price within 10% of 52w high': ((week_52_high - current_price) / week_52_high * 100) <= MAX_PCT_FROM_HIGH,
+            '6. Price 30%+ above 52w low': pct_above_52w_low >= 30,
+            '7. Price within 10% of 52w high': pct_from_52w_high <= MAX_PCT_FROM_HIGH,
             '8. RS Rating >= 80': rs_rating >= MIN_RS_RATING,
-            '9. RS not overextended': rs_rating <= MAX_RS_RATING
+            '9. RS not overextended': rs_rating <= MAX_RS_RATING,
+            '10. 50 MA trending up': ma_50_slope is not None and ma_50_slope > MIN_50MA_SLOPE_PCT,
+            '11. 150 MA not rolling over': ma_150_slope is not None and ma_150_slope > -MAX_150MA_ROLLOVER_PCT,
+            '12. Not too extended from 50 MA': pct_above_ma_50 is not None and pct_above_ma_50 <= MAX_PCT_ABOVE_50MA,
+            '13. Recent 52w high': days_since_52w_high is not None and days_since_52w_high <= MAX_DAYS_SINCE_52W_HIGH
         }
 
-        stage = determine_stage(df, current_price, ma_50, ma_150, ma_200, criteria)
-
-        pct_above_52w_low = ((current_price - week_52_low) / week_52_low * 100)
-        pct_from_52w_high = ((week_52_high - current_price) / week_52_high * 100)
+        stage = determine_stage(
+            current_price,
+            ma_50,
+            ma_150,
+            ma_200,
+            ma_50_slope,
+            ma_150_slope,
+            ma_200_slope,
+            pct_from_52w_high,
+            criteria
+        )
 
         return {
             'stage': stage,
             'criteria': criteria,
+            'criteria_count': len(criteria),
             'passes_all_criteria': all(criteria.values()),
             'current_price': current_price,
             'ma_50': ma_50,
             'ma_150': ma_150,
             'ma_200': ma_200,
+            'ma_50_slope': ma_50_slope,
+            'ma_150_slope': ma_150_slope,
             'ma_200_slope': ma_200_slope,
             'week_52_high': week_52_high,
             'week_52_low': week_52_low,
             'pct_above_52w_low': pct_above_52w_low,
             'pct_from_52w_high': pct_from_52w_high,
+            'pct_above_ma_50': pct_above_ma_50,
+            'days_since_52w_high': days_since_52w_high,
             'rs_rating': rs_rating
         }, None
 
@@ -476,6 +600,59 @@ def analyze_volume(df):
 # EARNINGS DATE WARNING (NEW)
 # ============================================================================
 
+def _normalize_earnings_date(value):
+    """Normalize a yfinance earnings date value to datetime.date."""
+    if value is None:
+        return None
+
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if hasattr(value, 'year') and hasattr(value, 'month') and hasattr(value, 'day'):
+        try:
+            return value
+        except Exception:
+            return None
+
+    if isinstance(value, str):
+        parsed = pd.to_datetime(value, errors='coerce')
+        if pd.isna(parsed):
+            return None
+        return parsed.date()
+
+    return None
+
+
+def _extract_earnings_dates(calendar_data):
+    """Extract normalized earnings dates from yfinance calendar payload."""
+    if calendar_data is None:
+        return []
+
+    raw_values = []
+
+    if isinstance(calendar_data, pd.DataFrame):
+        raw_values = calendar_data.values.flatten().tolist()
+    elif isinstance(calendar_data, pd.Series):
+        raw_values = calendar_data.tolist()
+    elif isinstance(calendar_data, dict):
+        raw_values = calendar_data.get('Earnings Date') or calendar_data.get('earningsDate') or []
+        if not isinstance(raw_values, (list, tuple, pd.Series, np.ndarray)):
+            raw_values = [raw_values]
+    elif isinstance(calendar_data, (list, tuple, np.ndarray)):
+        raw_values = list(calendar_data)
+    else:
+        raw_values = [calendar_data]
+
+    dates = []
+    for raw in raw_values:
+        normalized = _normalize_earnings_date(raw)
+        if normalized is not None:
+            dates.append(normalized)
+
+    return sorted(set(dates))
+
+
 def get_earnings_warning(ticker):
     """
     Check upcoming earnings date and flag if within danger/caution zone.
@@ -489,84 +666,46 @@ def get_earnings_warning(ticker):
     - N/A: No earnings data (ETFs, funds, etc.)
     """
     try:
-        stock = yf.Ticker(ticker)
+        stock = get_ticker_obj(ticker)
+        earnings_dates = _extract_earnings_dates(stock.calendar)
 
-        # Use stock.calendar which returns simple datetime.date objects
-        try:
-            calendar = stock.calendar
-            if calendar and 'Earnings Date' in calendar:
-                earnings_dates = calendar['Earnings Date']
+        if not earnings_dates:
+            return {
+                'next_earnings_date': None,
+                'last_earnings_date': None,
+                'days_until_earnings': None,
+                'earnings_flag': "N/A"
+            }
 
-                # No earnings dates at all (ETFs, funds, etc.)
-                if not earnings_dates or len(earnings_dates) == 0:
-                    return {
-                        'next_earnings_date': None,
-                        'last_earnings_date': None,
-                        'days_until_earnings': None,
-                        'earnings_flag': "N/A"
-                    }
+        today = datetime.now().date()
+        future_dates = [d for d in earnings_dates if d >= today]
+        past_dates = [d for d in earnings_dates if d < today]
 
-                # Get the earnings date (first in list)
-                earnings_date = earnings_dates[0]
-                today = datetime.now().date()
-                days_until = (earnings_date - today).days
+        if future_dates:
+            next_date = future_dates[0]
+            days_until = (next_date - today).days
 
-                if days_until < 0:
-                    # Earnings already passed - show as last reported
-                    # Check if there's a future date in the list
-                    future_date = None
-                    for d in earnings_dates:
-                        if (d - today).days >= 0:
-                            future_date = d
-                            break
+            if days_until <= EARNINGS_DANGER_DAYS:
+                earnings_flag = "DANGER"
+            elif days_until <= EARNINGS_CAUTION_DAYS:
+                earnings_flag = "CAUTION"
+            else:
+                earnings_flag = "CLEAR"
 
-                    if future_date:
-                        # Found a future date
-                        days_until = (future_date - today).days
-                        if days_until <= EARNINGS_DANGER_DAYS:
-                            earnings_flag = "DANGER"
-                        elif days_until <= EARNINGS_CAUTION_DAYS:
-                            earnings_flag = "CAUTION"
-                        else:
-                            earnings_flag = "CLEAR"
-                        return {
-                            'next_earnings_date': future_date.strftime('%Y-%m-%d'),
-                            'last_earnings_date': earnings_date.strftime('%Y-%m-%d'),
-                            'days_until_earnings': days_until,
-                            'earnings_flag': earnings_flag
-                        }
-                    else:
-                        # Only past date available - next earnings TBD
-                        return {
-                            'next_earnings_date': None,
-                            'last_earnings_date': earnings_date.strftime('%Y-%m-%d'),
-                            'days_until_earnings': None,
-                            'earnings_flag': "REPORTED"
-                        }
+            last_date = past_dates[-1] if past_dates else None
+            return {
+                'next_earnings_date': next_date.strftime('%Y-%m-%d'),
+                'last_earnings_date': last_date.strftime('%Y-%m-%d') if last_date else None,
+                'days_until_earnings': days_until,
+                'earnings_flag': earnings_flag
+            }
 
-                # Future earnings date
-                if days_until <= EARNINGS_DANGER_DAYS:
-                    earnings_flag = "DANGER"
-                elif days_until <= EARNINGS_CAUTION_DAYS:
-                    earnings_flag = "CAUTION"
-                else:
-                    earnings_flag = "CLEAR"
-
-                return {
-                    'next_earnings_date': earnings_date.strftime('%Y-%m-%d'),
-                    'last_earnings_date': None,
-                    'days_until_earnings': days_until,
-                    'earnings_flag': earnings_flag
-                }
-        except Exception:
-            pass  # Fall through to default
-
-        # Default if no earnings data available
+        # Only past dates available - next earnings not scheduled yet
         return {
             'next_earnings_date': None,
-            'last_earnings_date': None,
+            'last_earnings_date': past_dates[-1].strftime('%Y-%m-%d') if past_dates else None,
             'days_until_earnings': None,
-            'earnings_flag': "N/A"
+            'earnings_flag': "REPORTED"
         }
 
     except Exception:
@@ -629,9 +768,10 @@ def get_sector(ticker):
     Returns sector string or 'Unknown'.
     """
     try:
-        stock = yf.Ticker(ticker)
+        stock = get_ticker_obj(ticker)
         info = stock.info
-        return info.get('sector', 'Unknown')
+        sector = info.get('sector', 'Unknown') if isinstance(info, dict) else 'Unknown'
+        return sector or 'Unknown'
     except Exception:
         return 'Unknown'
 
@@ -698,6 +838,26 @@ def calculate_sector_concentration(results):
         'has_concentration_warning': len(concentrated_sectors) > 0
     }
 
+
+def is_operating_company(info):
+    """Return (is_operating_company, reason)."""
+    if not isinstance(info, dict):
+        return True, None
+
+    quote_type = str(info.get('quoteType', '')).upper()
+    if quote_type in {'ETF', 'ETN', 'MUTUALFUND', 'FUND', 'INDEX', 'CRYPTO'}:
+        return False, f"Non-operating security ({quote_type})"
+
+    category = str(info.get('category', '')).upper()
+    if any(token in category for token in ['ETF', 'FUND', 'INDEX']):
+        return False, "Non-operating security (fund/index category)"
+
+    name = f"{info.get('shortName', '')} {info.get('longName', '')}".upper()
+    if any(token in name for token in [' ETF', ' ETN', ' FUND', ' TRUST']):
+        return False, "Non-operating security (name pattern)"
+
+    return True, None
+
 # ============================================================================
 # STEP 2: FUNDAMENTAL SCREENING (SEPA)
 # ============================================================================
@@ -705,8 +865,7 @@ def calculate_sector_concentration(results):
 def calculate_atr_percent(ticker):
     """Calculate Average True Range as percentage of price"""
     try:
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="3mo")
+        df = get_price_history(ticker, period="3mo")
 
         if len(df) < 20:
             return None
@@ -718,33 +877,88 @@ def calculate_atr_percent(ticker):
         df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
 
         # ATR is 14-period average of True Range
-        atr = df['TR'].rolling(window=14).mean().iloc[-1]
-        current_price = df['Close'].iloc[-1]
+        atr = df['TR'].rolling(window=14).mean().dropna()
+        if atr.empty:
+            return None
 
-        atr_percent = (atr / current_price) * 100
+        atr_value = atr.iloc[-1]
+        current_price = df['Close'].iloc[-1]
+        if current_price == 0 or pd.isna(current_price):
+            return None
+
+        atr_percent = (atr_value / current_price) * 100
         return atr_percent
 
-    except Exception as e:
+    except Exception:
         return None
 
-def check_acceleration(values):
+def calculate_yoy_growth_series(values, max_points=4):
     """
-    Check if values show acceleration pattern
-    Returns number of quarters (out of last 4) showing acceleration
+    Build YoY growth series from quarterly values sorted most-recent first.
+    Example: Q4'25 vs Q4'24, Q3'25 vs Q3'24, ...
     """
-    if len(values) < 4:
+    if not isinstance(values, pd.Series) or len(values) < 5:
+        return []
+
+    growth_rates = []
+    max_idx = min(len(values) - 4, max_points)
+
+    for i in range(max_idx):
+        current_val = values.iloc[i]
+        year_ago_val = values.iloc[i + 4]
+
+        if pd.isna(current_val) or pd.isna(year_ago_val) or year_ago_val == 0:
+            continue
+
+        growth = ((current_val - year_ago_val) / abs(year_ago_val)) * 100
+        growth_rates.append(float(growth))
+
+    return growth_rates
+
+
+def check_acceleration(yoy_growth_rates, min_delta=ACCELERATION_MIN_DELTA):
+    """
+    Count accelerating quarters in the YoY growth series.
+    Uses chronological order and requires a minimum delta to avoid noise.
+    """
+    if len(yoy_growth_rates) < 2:
         return 0
 
-    # Look at last 4 quarters
-    recent_4 = values[-4:]
-
-    # Count how many quarters show growth > previous quarter
+    chronological = list(reversed(yoy_growth_rates[:4]))
     acceleration_count = 0
-    for i in range(1, len(recent_4)):
-        if recent_4[i] > recent_4[i-1]:
+
+    for i in range(1, len(chronological)):
+        if (chronological[i] - chronological[i - 1]) >= min_delta:
             acceleration_count += 1
 
     return acceleration_count
+
+
+def count_positive_growth_quarters(yoy_growth_rates, lookback=4):
+    """Count positive YoY growth quarters in the recent series."""
+    recent = yoy_growth_rates[:lookback]
+    return sum(1 for g in recent if g > 0)
+
+
+def count_sign_flips(values, lookback=8):
+    """Count profit/loss sign flips in recent quarterly values."""
+    if not isinstance(values, pd.Series):
+        return 0
+
+    recent_values = values.head(lookback).tolist()
+    cleaned = [v for v in recent_values if not pd.isna(v) and v != 0]
+    if len(cleaned) < 2:
+        return 0
+
+    flips = 0
+    prev_sign = 1 if cleaned[0] > 0 else -1
+    for value in cleaned[1:]:
+        curr_sign = 1 if value > 0 else -1
+        if curr_sign != prev_sign:
+            flips += 1
+        prev_sign = curr_sign
+
+    return flips
 
 def analyze_fundamentals(ticker):
     """
@@ -752,17 +966,30 @@ def analyze_fundamentals(ticker):
     Returns dict with fundamental metrics and pass/fail for Step 2
     """
     try:
-        stock = yf.Ticker(ticker)
+        stock = get_ticker_obj(ticker)
 
-        # Get quarterly financials
-        quarterly_financials = stock.quarterly_financials
+        info = {}
+        try:
+            info = stock.info or {}
+        except Exception:
+            info = {}
+
+        is_company, skip_reason = is_operating_company(info)
+        if not is_company:
+            return None, skip_reason
+
+        # Get quarterly income statement (contains both revenue and net income rows)
         quarterly_income = stock.quarterly_income_stmt
-
-        if quarterly_financials is None or len(quarterly_financials.columns) < 4:
+        if quarterly_income is None or quarterly_income.empty:
             return None, "Insufficient quarterly data"
 
         # Get quarterly earnings (try multiple possible field names)
-        earnings_fields = ['Net Income', 'NetIncome', 'Net Income Common Stockholders']
+        earnings_fields = [
+            'Net Income',
+            'NetIncome',
+            'Net Income Common Stockholders',
+            'NetIncomeCommonStockholders'
+        ]
         eps_data = None
         for field in earnings_fields:
             if field in quarterly_income.index:
@@ -777,82 +1004,157 @@ def analyze_fundamentals(ticker):
                 revenue_data = quarterly_income.loc[field]
                 break
 
-        # Get margins from info (most recent)
-        info = stock.info
-        current_margin = info.get('profitMargins', None)
+        if isinstance(eps_data, pd.DataFrame):
+            eps_data = eps_data.iloc[0]
+        if isinstance(revenue_data, pd.DataFrame):
+            revenue_data = revenue_data.iloc[0]
+
+        eps_clean = pd.Series(dtype=float)
+        revenue_clean = pd.Series(dtype=float)
+
+        if isinstance(eps_data, pd.Series):
+            eps_clean = pd.to_numeric(eps_data, errors='coerce').dropna().sort_index(ascending=False)
+        if isinstance(revenue_data, pd.Series):
+            revenue_clean = pd.to_numeric(revenue_data, errors='coerce').dropna().sort_index(ascending=False)
+
+        current_margin = info.get('profitMargins', None) if isinstance(info, dict) else None
+        if isinstance(current_margin, (pd.Series, pd.DataFrame, np.ndarray, list, tuple, dict)):
+            current_margin = None
+        elif isinstance(current_margin, (int, float, np.floating)):
+            if np.isnan(current_margin):
+                current_margin = None
+        elif current_margin is not None:
+            current_margin = None
 
         # Calculate growth rates and acceleration
         results = {
-            'has_earnings_data': eps_data is not None and len(eps_data) >= 4,
-            'has_revenue_data': revenue_data is not None and len(revenue_data) >= 4,
+            'has_earnings_data': len(eps_clean) >= MIN_YOY_QUARTERS,
+            'has_revenue_data': len(revenue_clean) >= MIN_YOY_QUARTERS,
             'earnings_acceleration_quarters': 0,
             'revenue_acceleration_quarters': 0,
+            'earnings_yoy_growth_series': [],
+            'revenue_yoy_growth_series': [],
+            'positive_earnings_growth_quarters': 0,
+            'positive_revenue_growth_quarters': 0,
+            'earnings_sign_flips': 0,
             'margin_expansion': False,
             'recent_earnings_growth': None,
             'recent_revenue_growth': None,
             'current_margin': current_margin,
+            'recent_net_margin': None,
+            'prior_net_margin': None,
             'atr_percent': calculate_atr_percent(ticker)
         }
 
         # Check earnings acceleration
         if results['has_earnings_data']:
-            # Sort by date (most recent first)
-            eps_sorted = eps_data.sort_index(ascending=False)
-
-            # Calculate YoY growth for most recent quarter (compare to 4 quarters ago)
-            if len(eps_sorted) >= 5:
-                recent_eps = eps_sorted.iloc[0]
-                year_ago_eps = eps_sorted.iloc[4]
-                if year_ago_eps != 0 and not pd.isna(year_ago_eps):
-                    results['recent_earnings_growth'] = ((recent_eps - year_ago_eps) / abs(year_ago_eps)) * 100
-
-            # Check acceleration pattern
-            eps_values = eps_sorted.head(8).values  # Last 8 quarters
-            results['earnings_acceleration_quarters'] = check_acceleration(eps_values[::-1])  # Reverse to chronological
+            eps_yoy = calculate_yoy_growth_series(eps_clean, max_points=4)
+            results['earnings_yoy_growth_series'] = eps_yoy
+            if len(eps_yoy) > 0:
+                results['recent_earnings_growth'] = eps_yoy[0]
+            results['earnings_acceleration_quarters'] = check_acceleration(eps_yoy)
+            results['positive_earnings_growth_quarters'] = count_positive_growth_quarters(eps_yoy)
+            results['earnings_sign_flips'] = count_sign_flips(eps_clean)
 
         # Check revenue acceleration
         if results['has_revenue_data']:
-            revenue_sorted = revenue_data.sort_index(ascending=False)
+            revenue_yoy = calculate_yoy_growth_series(revenue_clean, max_points=4)
+            results['revenue_yoy_growth_series'] = revenue_yoy
+            if len(revenue_yoy) > 0:
+                results['recent_revenue_growth'] = revenue_yoy[0]
+            results['revenue_acceleration_quarters'] = check_acceleration(revenue_yoy)
+            results['positive_revenue_growth_quarters'] = count_positive_growth_quarters(revenue_yoy)
 
-            # Calculate YoY growth
-            if len(revenue_sorted) >= 5:
-                recent_rev = revenue_sorted.iloc[0]
-                year_ago_rev = revenue_sorted.iloc[4]
-                if year_ago_rev != 0 and not pd.isna(year_ago_rev):
-                    results['recent_revenue_growth'] = ((recent_rev - year_ago_rev) / year_ago_rev) * 100
+        # Check margin expansion using derived quarterly net margins
+        if results['has_earnings_data'] and results['has_revenue_data']:
+            margin_df = pd.concat([
+                eps_clean.rename('net_income'),
+                revenue_clean.rename('revenue')
+            ], axis=1).dropna()
+            margin_df = margin_df[margin_df['revenue'] != 0].sort_index(ascending=False)
 
-            # Check acceleration
-            rev_values = revenue_sorted.head(8).values
-            results['revenue_acceleration_quarters'] = check_acceleration(rev_values[::-1])
+            recent_margin = None
+            older_margin = None
 
-        # Check margin expansion (simple check: compare recent vs older quarters)
-        if current_margin is not None and current_margin > 0:
-            # If we have margin data, assume expansion if margin > historical average
-            # This is simplified - ideally we'd track quarterly margins
-            results['margin_expansion'] = True  # Placeholder - improve with historical margin tracking
+            if len(margin_df) >= 8:
+                recent_margin = (margin_df['net_income'].iloc[:4] / margin_df['revenue'].iloc[:4]).mean()
+                older_margin = (margin_df['net_income'].iloc[4:8] / margin_df['revenue'].iloc[4:8]).mean()
+            elif len(margin_df) >= 5:
+                recent_margin = margin_df['net_income'].iloc[0] / margin_df['revenue'].iloc[0]
+                older_margin = margin_df['net_income'].iloc[4] / margin_df['revenue'].iloc[4]
+
+            if recent_margin is not None and older_margin is not None and not pd.isna(recent_margin) and not pd.isna(older_margin):
+                results['margin_expansion'] = recent_margin > older_margin
+                results['recent_net_margin'] = recent_margin * 100
+                results['prior_net_margin'] = older_margin * 100
+
+                # Fallback to derived current margin if info endpoint is missing
+                if results['current_margin'] is None:
+                    results['current_margin'] = recent_margin
 
         # Determine if passes Step 2 criteria
         passes_step2 = True
         failed_criteria = []
 
-        # Check earnings acceleration
-        if results['earnings_acceleration_quarters'] < MIN_ACCELERATION_QUARTERS:
+        if not results['has_earnings_data']:
             passes_step2 = False
-            failed_criteria.append(f"Earnings acceleration ({results['earnings_acceleration_quarters']}/{MIN_ACCELERATION_QUARTERS} quarters)")
+            failed_criteria.append(f"Missing earnings data (need {MIN_YOY_QUARTERS}+ quarters)")
+
+        if not results['has_revenue_data']:
+            passes_step2 = False
+            failed_criteria.append(f"Missing revenue data (need {MIN_YOY_QUARTERS}+ quarters)")
+
+        if results['has_earnings_data'] and len(results['earnings_yoy_growth_series']) < MIN_YOY_ACCEL_POINTS:
+            passes_step2 = False
+            failed_criteria.append(f"Insufficient earnings YoY history ({len(results['earnings_yoy_growth_series'])}/{MIN_YOY_ACCEL_POINTS})")
+
+        if results['has_revenue_data'] and len(results['revenue_yoy_growth_series']) < MIN_YOY_ACCEL_POINTS:
+            passes_step2 = False
+            failed_criteria.append(f"Insufficient revenue YoY history ({len(results['revenue_yoy_growth_series'])}/{MIN_YOY_ACCEL_POINTS})")
+
+        required_earn_accel = min(MIN_ACCELERATION_QUARTERS, max(0, len(results['earnings_yoy_growth_series']) - 1))
+        required_rev_accel = min(MIN_ACCELERATION_QUARTERS, max(0, len(results['revenue_yoy_growth_series']) - 1))
+
+        # Check earnings acceleration
+        if results['has_earnings_data'] and required_earn_accel > 0 and results['earnings_acceleration_quarters'] < required_earn_accel:
+            passes_step2 = False
+            failed_criteria.append(f"Earnings acceleration ({results['earnings_acceleration_quarters']}/{required_earn_accel} quarters)")
 
         # Check revenue acceleration
-        if results['revenue_acceleration_quarters'] < MIN_ACCELERATION_QUARTERS:
+        if results['has_revenue_data'] and required_rev_accel > 0 and results['revenue_acceleration_quarters'] < required_rev_accel:
             passes_step2 = False
-            failed_criteria.append(f"Revenue acceleration ({results['revenue_acceleration_quarters']}/{MIN_ACCELERATION_QUARTERS} quarters)")
+            failed_criteria.append(f"Revenue acceleration ({results['revenue_acceleration_quarters']}/{required_rev_accel} quarters)")
 
         # Check minimum growth rates
-        if results['recent_earnings_growth'] is not None and results['recent_earnings_growth'] < MIN_EARNINGS_GROWTH:
+        if results['recent_earnings_growth'] is None:
+            passes_step2 = False
+            failed_criteria.append("Earnings growth unavailable")
+        elif results['recent_earnings_growth'] < MIN_EARNINGS_GROWTH:
             passes_step2 = False
             failed_criteria.append(f"Earnings growth ({results['recent_earnings_growth']:.1f}% < {MIN_EARNINGS_GROWTH}%)")
 
-        if results['recent_revenue_growth'] is not None and results['recent_revenue_growth'] < MIN_SALES_GROWTH:
+        if results['recent_revenue_growth'] is None:
+            passes_step2 = False
+            failed_criteria.append("Revenue growth unavailable")
+        elif results['recent_revenue_growth'] < MIN_SALES_GROWTH:
             passes_step2 = False
             failed_criteria.append(f"Revenue growth ({results['recent_revenue_growth']:.1f}% < {MIN_SALES_GROWTH}%)")
+
+        if results['positive_earnings_growth_quarters'] < MIN_POSITIVE_GROWTH_QUARTERS:
+            passes_step2 = False
+            failed_criteria.append(f"Earnings consistency ({results['positive_earnings_growth_quarters']}/{MIN_POSITIVE_GROWTH_QUARTERS} positive YoY quarters)")
+
+        if results['positive_revenue_growth_quarters'] < MIN_POSITIVE_GROWTH_QUARTERS:
+            passes_step2 = False
+            failed_criteria.append(f"Revenue consistency ({results['positive_revenue_growth_quarters']}/{MIN_POSITIVE_GROWTH_QUARTERS} positive YoY quarters)")
+
+        if results['earnings_sign_flips'] > MAX_EARNINGS_SIGN_FLIPS:
+            passes_step2 = False
+            failed_criteria.append(f"Unstable earnings ({results['earnings_sign_flips']} profit/loss sign flips)")
+
+        if REQUIRE_MARGIN_EXPANSION and not results['margin_expansion']:
+            passes_step2 = False
+            failed_criteria.append("No margin expansion")
 
         # Check volatility (ATR)
         if results['atr_percent'] is not None and results['atr_percent'] > MAX_ATR_PERCENT:
@@ -930,12 +1232,31 @@ def calculate_quality_score(stage_analysis, fundamentals):
         elif rg > 10:
             score += 5
 
-    # 5. Earnings Acceleration (10 pts max)
+    # 5. Earnings/Revenue Acceleration (15 pts max combined)
     ea = fundamentals.get('earnings_acceleration_quarters', 0)
     if ea >= 3:
-        score += 10
+        score += 8
     elif ea >= 2:
-        score += 5
+        score += 4
+
+    ra = fundamentals.get('revenue_acceleration_quarters', 0)
+    if ra >= 3:
+        score += 7
+    elif ra >= 2:
+        score += 3
+
+    # 6. Stability penalties/bonuses (false-positive reduction)
+    sign_flips = fundamentals.get('earnings_sign_flips', 0)
+    if sign_flips > 0:
+        score -= min(15, sign_flips * 7)
+
+    if fundamentals.get('positive_earnings_growth_quarters', 0) >= 3:
+        score += 3
+
+    if fundamentals.get('positive_revenue_growth_quarters', 0) >= 3:
+        score += 2
+
+    score = max(0, min(100, score))
 
     # Determine grade
     if score >= 85:
@@ -958,8 +1279,16 @@ def main():
     print("SUPERPERFORM - COMPLETE MINERVINI SEPA ANALYSIS")
     print("=" * 100)
 
+    sepa_qualified = []
+    sector_analysis = None
+    top_picks = []
+
     # Get stock list (from Finviz or hardcoded)
-    stock_list = get_stock_list()
+    try:
+        stock_list = get_stock_list()
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        return
 
     print(f"\nConfiguration:")
     print(f"  • Analyzing {len(stock_list)} stocks")
@@ -984,15 +1313,16 @@ def main():
     print("\nDownloading S&P 500 (SPY) benchmark data...")
 
     try:
-        spy = yf.Ticker("SPY")
-        spy_data = spy.history(period="1y")
+        spy_data = get_price_history("SPY", period="1y")
 
         if spy_data is None or len(spy_data) == 0:
             print("ERROR: Could not fetch SPY data. Exiting.")
             return
 
+        start_date = pd.to_datetime(spy_data.index[0]).date()
+        end_date = pd.to_datetime(spy_data.index[-1]).date()
         print(f"✓ Downloaded {len(spy_data)} days of SPY data")
-        print(f"  Date range: {spy_data.index[0].date()} to {spy_data.index[-1].date()}\n")
+        print(f"  Date range: {start_date} to {end_date}\n")
 
     except Exception as e:
         print(f"ERROR: Exception while fetching SPY data: {e}")
@@ -1040,14 +1370,15 @@ def main():
 
     # Calculate RS Rating (percentile rank)
     df_rs = pd.DataFrame(rs_results)
-    valid_scores = df_rs[df_rs['RS Score'].notna()]['RS Score']
-    df_rs['RS Rating'] = df_rs['RS Score'].apply(
-        lambda x: int(pd.Series(valid_scores).rank(pct=True)[df_rs[df_rs['RS Score'] == x].index[0]] * 99)
-        if pd.notna(x) else None
-    )
+    df_rs['RS Rating'] = np.nan
+    valid_mask = df_rs['RS Score'].notna()
+    if len(df_rs.loc[valid_mask]) > 0:
+        percentile_ranks = df_rs.loc[valid_mask, 'RS Score'].rank(pct=True, method='max')
+        rs_ratings = np.ceil(percentile_ranks * 99).clip(lower=1, upper=99).astype(int)
+        df_rs.loc[valid_mask, 'RS Rating'] = rs_ratings
 
     # Filter stocks by RS rating
-    high_rs_stocks = df_rs[df_rs['RS Rating'] >= MIN_RS_RATING].sort_values('RS Rating', ascending=False)
+    high_rs_stocks = df_rs[df_rs['RS Rating'] >= MIN_RS_RATING].sort_values(by='RS Rating', ascending=False)
 
     print(f"\n✓ RS Calculation Complete")
     print(f"  • {len(high_rs_stocks)} stocks with RS >= {MIN_RS_RATING}")
@@ -1090,7 +1421,8 @@ def main():
     stage_2_stocks = [r for r in stage_results if r['analysis']['passes_all_criteria']]
 
     print(f"\n✓ Stage Analysis Complete")
-    print(f"  • {len(stage_2_stocks)} stocks meet all 8 Stage 2 criteria")
+    criteria_count = len(stage_2_stocks[0]['analysis']['criteria']) if stage_2_stocks else 0
+    print(f"  • {len(stage_2_stocks)} stocks meet all {criteria_count} Stage 2 criteria")
 
     # ========================================================================
     # STEP 3: Fundamental Screening (SEPA Step 2)
@@ -1100,7 +1432,7 @@ def main():
         print("STEP 3: FUNDAMENTAL SCREENING (SEPA STEP 2)")
         print("─" * 100)
         print(f"\nAnalyzing fundamentals for {len(stage_2_stocks)} Stage 2 stocks...")
-        print("Checking: Earnings acceleration, Revenue acceleration, Margins, Volatility\n")
+        print("Checking: YoY acceleration, growth consistency, margins, and volatility\n")
 
         sepa_results = []
 
@@ -1147,7 +1479,7 @@ def main():
     # ========================================================================
     # STEP 4: ENHANCED ANALYSIS (Entry Timing, Volume, Earnings, Sector)
     # ========================================================================
-    if ENABLE_STEP2 and 'sepa_qualified' in locals() and len(sepa_qualified) > 0:
+    if ENABLE_STEP2 and len(sepa_qualified) > 0:
         print("\n" + "-" * 100)
         print("STEP 4: ENHANCED ANALYSIS (Entry, Volume, Earnings, Sector)")
         print("-" * 100)
@@ -1159,8 +1491,7 @@ def main():
 
             # Get fresh price data for entry/volume analysis
             try:
-                stock = yf.Ticker(ticker)
-                df = stock.history(period="3mo")
+                df = get_price_history(ticker, period="3mo")
 
                 # Entry timing analysis
                 entry_data = analyze_entry_timing(df)
@@ -1219,16 +1550,23 @@ def main():
     else:
         print("  Recommendation: Cash preferred, avoid new longs")
 
-    # TOP PICKS Section - Grade A/B, BUY_ZONE, no earnings danger
-    if ENABLE_STEP2 and 'sepa_qualified' in locals() and len(sepa_qualified) > 0:
+    # TOP PICKS Section - stricter false-positive filters
+    if ENABLE_STEP2 and len(sepa_qualified) > 0:
+        market_allows_new_longs = market_regime['regime'] != "BEARISH"
         top_picks = [r for r in sepa_qualified if
                      r.get('grade') in ['A', 'B'] and
                      r.get('entry', {}).get('entry_status') == 'BUY_ZONE' and
-                     r.get('earnings', {}).get('earnings_flag') != 'DANGER']
+                     r.get('volume', {}).get('volume_status') != 'WEAK' and
+                     r.get('earnings', {}).get('earnings_flag') in ['CLEAR', 'REPORTED'] and
+                     r.get('analysis', {}).get('pct_above_ma_50') is not None and
+                     r.get('analysis', {}).get('pct_above_ma_50') <= MAX_PCT_ABOVE_50MA]
+
+        if not market_allows_new_longs:
+            top_picks = []
 
         if top_picks:
             print("\n" + "-" * 100)
-            print("TOP PICKS - Ready to Buy (Grade A/B, Buy Zone, Earnings Clear)")
+            print("TOP PICKS - Ready to Buy (Grade A/B, Buy Zone, Healthy Volume, Earnings Clear)")
             print("-" * 100)
             print(f"  {'TICKER':<8} {'GRADE':<6} {'RS':<4} {'PRICE':<10} {'ENTRY':<10} {'VOLUME':<8} {'EARNINGS':<10} {'SECTOR':<15}")
             print(f"  {'-'*8} {'-'*6} {'-'*4} {'-'*10} {'-'*10} {'-'*8} {'-'*10} {'-'*15}")
@@ -1270,7 +1608,7 @@ def main():
                 print(f"  {ticker:<8} {grade:<6} {rs:<4} ${price:<9.2f} {entry:<10} {volume:<8} {earn_str:<10} {sector:<15}")
 
         # Sector Concentration
-        if 'sector_analysis' in locals():
+        if sector_analysis:
             print("\n" + "-" * 100)
             print("SECTOR CONCENTRATION")
             print("-" * 100)
@@ -1290,9 +1628,9 @@ def main():
 
     print(f"  Stage 2 (Buyable):       {stage_counts.get(2, 0)} stocks")
 
-    if ENABLE_STEP2 and 'sepa_qualified' in locals():
+    if ENABLE_STEP2:
         print(f"  SEPA Qualified:          {len(sepa_qualified)} stocks")
-        if 'top_picks' in locals():
+        if top_picks:
             print(f"  Top Picks (actionable):  {len(top_picks)} stocks")
 
     print(f"  Stage 1 (Consolidation): {stage_counts.get(1, 0)} stocks")
@@ -1322,11 +1660,15 @@ def main():
             'MA_50': a['ma_50'],
             'MA_150': a['ma_150'],
             'MA_200': a['ma_200'],
+            'MA_50_Slope': a.get('ma_50_slope'),
+            'MA_150_Slope': a.get('ma_150_slope'),
             'MA_200_Slope': a['ma_200_slope'],
             '52w_High': a['week_52_high'],
             '52w_Low': a['week_52_low'],
             'Pct_Above_52w_Low': a['pct_above_52w_low'],
             'Pct_From_52w_High': a['pct_from_52w_high'],
+            'Pct_Above_MA_50': a.get('pct_above_ma_50'),
+            'Days_Since_52w_High': a.get('days_since_52w_high'),
             'Criteria_Met': sum(a['criteria'].values()),
             'Failed_Criteria': ', '.join([k.split('.')[1].strip() for k, v in a['criteria'].items() if not v])
         }
@@ -1342,8 +1684,15 @@ def main():
                 'Revenue_Growth_YoY': f['recent_revenue_growth'],
                 'Earnings_Accel_Quarters': f['earnings_acceleration_quarters'],
                 'Revenue_Accel_Quarters': f['revenue_acceleration_quarters'],
+                'Positive_Earnings_Growth_Quarters': f.get('positive_earnings_growth_quarters'),
+                'Positive_Revenue_Growth_Quarters': f.get('positive_revenue_growth_quarters'),
+                'Earnings_Sign_Flips': f.get('earnings_sign_flips'),
                 'ATR_Percent': f['atr_percent'],
-                'Net_Margin': f['current_margin'] * 100 if f['current_margin'] else None,
+                'Net_Margin': f['current_margin'] * 100 if f.get('current_margin') is not None else None,
+                'Recent_Net_Margin': f.get('recent_net_margin'),
+                'Prior_Net_Margin': f.get('prior_net_margin'),
+                'Earnings_YoY_Series': ', '.join([f"{x:.1f}" for x in f.get('earnings_yoy_growth_series', [])]),
+                'Revenue_YoY_Series': ', '.join([f"{x:.1f}" for x in f.get('revenue_yoy_growth_series', [])]),
                 'SEPA_Failed_Criteria': ', '.join(f['failed_criteria']) if f['failed_criteria'] else None
             })
 
@@ -1388,16 +1737,16 @@ def main():
     print(f"\n✓ Results saved to: {filename}")
 
     # Save SEPA qualified stocks separately
-    if ENABLE_STEP2 and 'sepa_qualified' in locals() and len(sepa_qualified) > 0:
+    if ENABLE_STEP2 and len(sepa_qualified) > 0:
         sepa_filename = f"sepa_qualified_{timestamp}.csv"
-        df_sepa = df_output[df_output['SEPA_Qualified'] == True]
+        df_sepa = df_output[df_output['SEPA_Qualified'] == True].copy()
         df_sepa.to_csv(sepa_filename, index=False)
         print(f"✓ SEPA qualified stocks saved to: {sepa_filename}")
 
         # Save top picks separately (NEW)
-        if 'top_picks' in locals() and len(top_picks) > 0:
+        if len(top_picks) > 0:
             top_picks_tickers = [r['ticker'] for r in top_picks]
-            df_top = df_sepa[df_sepa['Ticker'].isin(top_picks_tickers)]
+            df_top = df_sepa[df_sepa['Ticker'].isin(top_picks_tickers)].copy()
             top_filename = f"top_picks_{timestamp}.csv"
             df_top.to_csv(top_filename, index=False)
             print(f"✓ Top picks saved to: {top_filename}")
